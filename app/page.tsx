@@ -1,3 +1,5 @@
+"use client"
+
 import { PortfolioOverview } from "@/components/portfolio-overview"
 import { HoldingsTable } from "@/components/holdings-table"
 import { PerformanceChart } from "@/components/performance-chart"
@@ -6,18 +8,57 @@ import { FileUpload } from "@/components/file-upload"
 import { PriceTracking } from "@/components/price-tracking"
 import { DatabaseInitializer } from "@/components/database-initializer"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { BarChart3 } from "lucide-react"
+import { Button } from "@/components/ui/button"
+import { LoginCard } from "@/components/login-card"
+import { useCurrentUser } from "@/hooks/use-current-user"
+import { BarChart3, LogOut } from "lucide-react"
 
 export default function DashboardPage() {
-  const userId = 1
+  const { user, loading, setUser, logout } = useCurrentUser()
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-background">
+        <div className="text-muted-foreground">Cargando sesión...</div>
+      </div>
+    )
+  }
+
+  if (!user) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-background px-4">
+        <LoginCard onLogin={(authenticatedUser) => setUser(authenticatedUser)} />
+      </div>
+    )
+  }
+
+  const userId = user.id
 
   return (
     <div className="min-h-screen bg-background">
       <header className="border-b border-border">
         <div className="container mx-auto px-4 py-4">
-          <div className="flex items-center gap-3">
-            <BarChart3 className="h-8 w-8 text-primary" />
-            <h1 className="text-2xl font-bold">Plataforma Financiera</h1>
+          <div className="flex items-center justify-between gap-4">
+            <div className="flex items-center gap-3">
+              <BarChart3 className="h-8 w-8 text-primary" />
+              <h1 className="text-2xl font-bold">Plataforma Financiera</h1>
+            </div>
+            <div className="flex items-center gap-3">
+              <div className="text-right">
+                <p className="text-sm font-medium leading-tight">{user.name}</p>
+                <p className="text-xs text-muted-foreground leading-tight">{user.email}</p>
+              </div>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={async () => {
+                  await logout()
+                }}
+              >
+                <LogOut className="mr-2 h-4 w-4" />
+                Salir
+              </Button>
+            </div>
           </div>
         </div>
       </header>

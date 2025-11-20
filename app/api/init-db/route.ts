@@ -6,8 +6,7 @@ export async function POST() {
     console.log("[v0] Starting database initialization via API...")
 
     // Create schema
-    await sql`
-      -- Users table
+    await sql.query(`
       CREATE TABLE IF NOT EXISTS users (
         id SERIAL PRIMARY KEY,
         email VARCHAR(255) UNIQUE NOT NULL,
@@ -15,16 +14,18 @@ export async function POST() {
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );
+    `)
 
-      -- Instrument types
+    await sql.query(`
       CREATE TABLE IF NOT EXISTS instrument_types (
         id SERIAL PRIMARY KEY,
         code VARCHAR(50) UNIQUE NOT NULL,
         name VARCHAR(100) NOT NULL,
         description TEXT
       );
+    `)
 
-      -- Instruments
+    await sql.query(`
       CREATE TABLE IF NOT EXISTS instruments (
         id SERIAL PRIMARY KEY,
         instrument_type_id INTEGER REFERENCES instrument_types(id),
@@ -33,8 +34,9 @@ export async function POST() {
         description TEXT,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );
+    `)
 
-      -- Accounts
+    await sql.query(`
       CREATE TABLE IF NOT EXISTS accounts (
         id SERIAL PRIMARY KEY,
         user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
@@ -45,8 +47,9 @@ export async function POST() {
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );
+    `)
 
-      -- Account instruments
+    await sql.query(`
       CREATE TABLE IF NOT EXISTS account_instruments (
         id SERIAL PRIMARY KEY,
         account_id INTEGER REFERENCES accounts(id) ON DELETE CASCADE,
@@ -55,8 +58,9 @@ export async function POST() {
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         UNIQUE(account_id, instrument_id)
       );
+    `)
 
-      -- Instrument prices
+    await sql.query(`
       CREATE TABLE IF NOT EXISTS instrument_prices (
         id SERIAL PRIMARY KEY,
         instrument_id INTEGER REFERENCES instruments(id) ON DELETE CASCADE,
@@ -66,8 +70,9 @@ export async function POST() {
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         UNIQUE(instrument_id, price_date)
       );
+    `)
 
-      -- Imported files
+    await sql.query(`
       CREATE TABLE IF NOT EXISTS imported_files (
         id SERIAL PRIMARY KEY,
         user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
@@ -79,8 +84,9 @@ export async function POST() {
         errors_count INTEGER DEFAULT 0,
         error_details TEXT
       );
+    `)
 
-      -- Transactions
+    await sql.query(`
       CREATE TABLE IF NOT EXISTS transactions (
         id SERIAL PRIMARY KEY,
         account_id INTEGER REFERENCES accounts(id) ON DELETE CASCADE,
@@ -95,43 +101,43 @@ export async function POST() {
         description TEXT,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );
-    `
+    `)
 
     console.log("[v0] Schema created")
 
     // Seed initial data
-    await sql`
+    await sql.query(`
       INSERT INTO instrument_types (code, name, description) VALUES
         ('cash', 'Efectivo', 'Dinero en efectivo o depósitos bancarios'),
         ('bond', 'Bono', 'Títulos de deuda pública o privada'),
         ('stock', 'Acción', 'Acciones de empresas cotizadas'),
         ('other', 'Otro', 'Otros instrumentos financieros')
       ON CONFLICT (code) DO NOTHING;
-    `
+    `)
 
-    await sql`
+    await sql.query(`
       INSERT INTO instruments (instrument_type_id, code, name, description) VALUES
         ((SELECT id FROM instrument_types WHERE code = 'cash'), 'ARS', 'Peso Argentino', 'Moneda local argentina'),
         ((SELECT id FROM instrument_types WHERE code = 'cash'), 'USD', 'Dólar Estadounidense', 'Dólar de Estados Unidos'),
         ((SELECT id FROM instrument_types WHERE code = 'cash'), 'EUR', 'Euro', 'Moneda europea'),
         ((SELECT id FROM instrument_types WHERE code = 'bond'), 'AL30', 'Bono AL30', 'Bono soberano argentino 2030'),
-        ((SELECT id FROM instrument_types WHERE code = 'bond'), 'BA24C', 'Bono BA24C', 'Bono de la Ciudad de Buenos Aires 2024'),
+        ((SELECT id FROM instrument_types WHERE code = 'bond'), 'BA24C', 'Bono de la Ciudad de Buenos Aires 2024'),
         ((SELECT id FROM instrument_types WHERE code = 'stock'), 'YPFD', 'YPF', 'YPF Sociedad Anónima'),
         ((SELECT id FROM instrument_types WHERE code = 'stock'), 'LOMA', 'Loma Negra', 'Loma Negra C.I.A.S.A.'),
         ((SELECT id FROM instrument_types WHERE code = 'stock'), 'METRD', 'Metrogas', 'Metrogas S.A.')
       ON CONFLICT (code) DO NOTHING;
-    `
+    `)
 
-    await sql`
+    await sql.query(`
       INSERT INTO users (email, name) VALUES
         ('demo@example.com', 'Usuario Demo')
       ON CONFLICT (email) DO NOTHING;
-    `
+    `)
 
     console.log("[v0] Initial data seeded")
 
     // Create views
-    await sql`
+    await sql.query(`
       CREATE OR REPLACE VIEW v_account_valuations AS
       SELECT 
         a.id AS account_id,
@@ -159,9 +165,9 @@ export async function POST() {
         LIMIT 1
       ) ip ON true
       WHERE ai.quantity > 0;
-    `
+    `)
 
-    await sql`
+    await sql.query(`
       CREATE OR REPLACE VIEW v_portfolio_totals AS
       SELECT 
         account_id,
@@ -174,9 +180,9 @@ export async function POST() {
         MAX(price_date) AS last_price_date
       FROM v_account_valuations
       GROUP BY account_id, account_name, user_id, user_name, currency_code;
-    `
+    `)
 
-    await sql`
+    await sql.query(`
       CREATE OR REPLACE VIEW v_transaction_history AS
       SELECT 
         t.id AS transaction_id,
@@ -198,9 +204,9 @@ export async function POST() {
       JOIN instruments i ON t.instrument_id = i.id
       LEFT JOIN imported_files if_table ON t.imported_file_id = if_table.id
       ORDER BY t.transaction_date DESC;
-    `
+    `)
 
-    await sql`
+    await sql.query(`
       CREATE OR REPLACE VIEW v_instrument_performance AS
       SELECT 
         i.code AS instrument_code,
@@ -233,7 +239,7 @@ export async function POST() {
         ORDER BY price_date DESC
         LIMIT 1
       ) ip_previous ON true;
-    `
+    `)
 
     console.log("[v0] Views created")
 
@@ -248,7 +254,7 @@ export async function POST() {
         success: false,
         error: error instanceof Error ? error.message : "Unknown error",
       },
-      { status: 500 },
+      { status: 500 }
     )
   }
 }
