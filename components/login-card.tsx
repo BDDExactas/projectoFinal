@@ -17,6 +17,23 @@ export function LoginCard({ onLogin }: LoginCardProps) {
   const [name, setName] = useState("Usuario Demo")
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState("")
+  const [showSecretWarning, setShowSecretWarning] = useState(false)
+
+  useEffect(() => {
+    async function fetchConfig() {
+      try {
+        const res = await fetch("/api/auth/config")
+        if (!res.ok) return
+        const data = await res.json()
+        if (data.usesFallbackSessionSecret) {
+          setShowSecretWarning(true)
+        }
+      } catch (err) {
+        console.warn("[v0] Failed to load auth config", err)
+      }
+    }
+    fetchConfig()
+  }, [])
 
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault()
@@ -85,6 +102,12 @@ export function LoginCard({ onLogin }: LoginCardProps) {
             <div className="flex items-start gap-2 rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">
               <AlertCircle className="mt-0.5 h-4 w-4" />
               <span>{error}</span>
+            </div>
+          )}
+
+          {showSecretWarning && (
+            <div className="rounded-md border border-yellow-300/60 bg-yellow-50 px-3 py-2 text-sm text-yellow-700">
+              Usando SESSION_SECRET temporal; agrega SESSION_SECRET en .env.local para evitar perder sesiones al reiniciar.
             </div>
           )}
         </CardContent>

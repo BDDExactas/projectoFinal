@@ -1,4 +1,4 @@
-import { createHmac, timingSafeEqual } from "crypto"
+import { createHmac, randomBytes, timingSafeEqual } from "crypto"
 import { cookies } from "next/headers"
 import type { NextRequest } from "next/server"
 import { sql } from "@/lib/db"
@@ -20,12 +20,30 @@ const baseCookieConfig = {
   path: "/",
 }
 
+let cachedSessionSecret: string | null = null
+let usingFallbackSecret = false
+
 function requireSessionSecret() {
-  const secret = process.env.SESSION_SECRET
-  if (!secret) {
-    throw new Error("SESSION_SECRET is not set")
+  if (cachedSessionSecret) {
+    return cachedSessionSecret
   }
-  return secret
+
+  const provided = process.env.SESSION_SECRET
+  if (provided) {
+    cachedSessionSecret = provided
+    return cachedSessionSecret
+  }
+
+  usingFallbackSecret = true
+  cachedSessionSecret = randomBytes(32).toString("hex")
+  console.warn(
+    "[v0] SESSION_SECRET is not set. Generated a temporary secret for this process. Set SESSION_SECRET in .env.local to persist sessions across restarts."
+  )
+  return cachedSessionSecret
+}
+
+export function isUsingFallbackSessionSecret() {
+  return usingFallbackSecret
 }
 
 function base64UrlEncode(value: string) {
