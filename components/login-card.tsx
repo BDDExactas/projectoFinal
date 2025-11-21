@@ -70,7 +70,6 @@ export function LoginCard({ onLogin }: LoginCardProps) {
           <LogIn className="h-5 w-5 text-primary" />
           Ingresar
         </CardTitle>
-        <CardDescription>Ingresar email y nombre</CardDescription>
       </CardHeader>
 
       <form onSubmit={handleSubmit}>
