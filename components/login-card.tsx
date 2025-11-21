@@ -70,13 +70,13 @@ export function LoginCard({ onLogin }: LoginCardProps) {
           <LogIn className="h-5 w-5 text-primary" />
           Ingresar
         </CardTitle>
-        <CardDescription>Acceso rápido sin contraseña: ingresa tu correo y un nombre.</CardDescription>
+        <CardDescription>Ingresar email y nombre</CardDescription>
       </CardHeader>
 
       <form onSubmit={handleSubmit}>
         <CardContent className="space-y-4">
           <div className="space-y-2">
-            <Label htmlFor="email">Correo</Label>
+            <Label htmlFor="email">Email</Label>
             <Input
               id="email"
               type="email"
@@ -88,7 +88,7 @@ export function LoginCard({ onLogin }: LoginCardProps) {
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="name">Nombre a mostrar</Label>
+            <Label htmlFor="name">Nombre</Label>
             <Input
               id="name"
               value={name}
