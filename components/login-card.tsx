@@ -107,7 +107,7 @@ export function LoginCard({ onLogin }: LoginCardProps) {
 
           {showSecretWarning && (
             <div className="rounded-md border border-yellow-300/60 bg-yellow-50 px-3 py-2 text-sm text-yellow-700">
-              Usando SESSION_SECRET temporal; agrega SESSION_SECRET en .env.local para evitar perder sesiones al reiniciar.
+              Usando SESSION_SECRET temporario. Agregar SESSION_SECRET a .env.local para no perder sesiones al reiniciar.
             </div>
           )}
         </CardContent>
