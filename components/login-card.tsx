@@ -89,7 +89,7 @@ export function LoginCard({ onLogin }: LoginCardProps) {
           )}
         </CardContent>
 
-        <CardFooter>
+        <CardFooter className="pt-6">
           <Button type="submit" className="w-full" disabled={submitting}>
             {submitting ? "Ingresando..." : "Entrar"}
           </Button>
