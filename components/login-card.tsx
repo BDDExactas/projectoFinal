@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react"
 import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
+import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import type { User } from "@/lib/db-types"
@@ -13,8 +13,10 @@ interface LoginCardProps {
 }
 
 export function LoginCard({ onLogin }: LoginCardProps) {
-  const [email, setEmail] = useState("demo@example.com")
-  const [name, setName] = useState("Usuario Demo")
+  const [email, setEmail] = useState("")
+  const [name, setName] = useState("")
+  const [password, setPassword] = useState("")
+  const [mode, setMode] = useState<"login" | "register">("login")
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState("")
   const [showSecretWarning, setShowSecretWarning] = useState(false)
@@ -41,10 +43,16 @@ export function LoginCard({ onLogin }: LoginCardProps) {
     setError("")
 
     try {
-      const response = await fetch("/api/auth/login", {
+      const endpoint = mode === "register" ? "/api/auth/register" : "/api/auth/login"
+      const payload =
+        mode === "register"
+          ? { email, name, password }
+          : { email, password }
+
+      const response = await fetch(endpoint, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, name }),
+        body: JSON.stringify(payload),
       })
 
       const data = await response.json()
@@ -86,13 +94,27 @@ export function LoginCard({ onLogin }: LoginCardProps) {
             />
           </div>
 
+          {mode === "register" && (
+            <div className="space-y-2">
+              <Label htmlFor="name">Nombre</Label>
+              <Input
+                id="name"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="Tu nombre"
+                required={mode === "register"}
+              />
+            </div>
+          )}
+
           <div className="space-y-2">
-            <Label htmlFor="name">Nombre</Label>
+            <Label htmlFor="password">Contraseña</Label>
             <Input
-              id="name"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="Tu nombre"
+              id="password"
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder="Mínimo 8 caracteres"
               required
             />
           </div>
@@ -111,9 +133,26 @@ export function LoginCard({ onLogin }: LoginCardProps) {
           )}
         </CardContent>
 
-        <CardFooter className="pt-6">
+        <CardFooter className="pt-6 flex flex-col gap-3">
           <Button type="submit" className="w-full" disabled={submitting}>
-            {submitting ? "Ingresando..." : "Entrar"}
+            {submitting
+              ? mode === "register"
+                ? "Creando cuenta..."
+                : "Ingresando..."
+              : mode === "register"
+                ? "Crear cuenta"
+                : "Entrar"}
+          </Button>
+          <Button
+            type="button"
+            variant="ghost"
+            className="w-full text-sm"
+            onClick={() => {
+              setMode(mode === "register" ? "login" : "register")
+              setError("")
+            }}
+          >
+            {mode === "register" ? "Ya tengo cuenta" : "Crear una cuenta nueva"}
           </Button>
         </CardFooter>
       </form>

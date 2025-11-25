@@ -1,11 +1,21 @@
 -- Financial Platform Database Schema
 -- Based on simplified model: Accounts contain Instruments
+DROP TABLE IF EXISTS transactions CASCADE;
+DROP TABLE IF EXISTS account_instruments CASCADE;
+DROP TABLE IF EXISTS instrument_prices CASCADE;
+DROP TABLE IF EXISTS account_valuations CASCADE; -- Por si acaso es una tabla y no vista
+DROP TABLE IF EXISTS accounts CASCADE;
+DROP TABLE IF EXISTS instruments CASCADE;
+DROP TABLE IF EXISTS instrument_types CASCADE;
+DROP TABLE IF EXISTS imported_files CASCADE;
+DROP TABLE IF EXISTS users CASCADE;
 
 -- Users table
 CREATE TABLE IF NOT EXISTS users (
   id SERIAL PRIMARY KEY,
   email VARCHAR(255) UNIQUE NOT NULL,
   name VARCHAR(255) NOT NULL,
+  password_hash TEXT NOT NULL,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );

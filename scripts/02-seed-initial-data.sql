@@ -28,7 +28,7 @@ INSERT INTO instruments (instrument_type_id, code, name, description) VALUES
   ((SELECT id FROM instrument_types WHERE code = 'stock'), 'METRD', 'Metrogas', 'Metrogas S.A.')
 ON CONFLICT (code) DO NOTHING;
 
--- Create a demo user
-INSERT INTO users (email, name) VALUES
-  ('demo@example.com', 'Usuario Demo')
+-- Password hash corresponds to the demo password: DemoPass123
+INSERT INTO users (email, name, password_hash) VALUES
+  ('demo@example.com', 'Usuario Demo', '$2a$12$zNbcQq1q4pYu3pDx2PzvUOiPSlCmC7R4mmuUS85HswkBcxizw6yxC')
 ON CONFLICT (email) DO NOTHING;
