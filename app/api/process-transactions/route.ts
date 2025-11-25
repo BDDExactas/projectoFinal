@@ -189,6 +189,24 @@ export async function POST(request: NextRequest) {
 
         const instrumentId = instrumentResult[0].id
 
+        const rowPrice =
+          validatedRow.precio ??
+          (validatedRow.total !== undefined && validatedRow.total !== null && validatedRow.cantidad > 0
+            ? Math.abs(validatedRow.total) / validatedRow.cantidad
+            : undefined)
+
+        if (rowPrice !== undefined && Number.isFinite(rowPrice) && rowPrice > 0) {
+          await sql`
+            INSERT INTO instrument_prices (instrument_id, price_date, price, currency_code)
+            VALUES (${instrumentId}, ${validatedRow.fecha}, ${rowPrice}, ${validatedRow.moneda || "ARS"})
+            ON CONFLICT (instrument_id, price_date)
+            DO UPDATE SET 
+              price = EXCLUDED.price,
+              currency_code = EXCLUDED.currency_code,
+              created_at = CURRENT_TIMESTAMP
+          `
+        }
+
         // Insert transaction
         await sql`
           INSERT INTO transactions (
