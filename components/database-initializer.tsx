@@ -7,6 +7,11 @@ import { AlertCircle, CheckCircle2, Database } from "lucide-react"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 
 export function DatabaseInitializer() {
+  // Only show this component when the public env var is explicitly enabled.
+  // This prevents accidental DB resets in production or by regular users.
+  const showInitializer = process.env.NEXT_PUBLIC_SHOW_DB_INIT === "true"
+  if (!showInitializer) return null
+
   const [status, setStatus] = useState<"idle" | "loading" | "success" | "error">("idle")
   const [message, setMessage] = useState("")
 
