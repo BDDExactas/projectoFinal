@@ -18,7 +18,7 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { TrendingUp, TrendingDown, Plus, RefreshCw, Radio } from "lucide-react"
+import { TrendingUp, TrendingDown, Plus, RefreshCw } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 import type { InstrumentPrice, Instrument } from "@/lib/db-types"
 
@@ -32,9 +32,9 @@ export function PriceTracking() {
   const [prices, setPrices] = useState<PriceWithInstrument[]>([])
   const [instruments, setInstruments] = useState<Instrument[]>([])
   const [loading, setLoading] = useState(true)
-  const [dialogOpen, setDialogOpen] = useState(false)
-  const [syncing, setSyncing] = useState(false)
   const { toast } = useToast()
+  const [dialogOpen, setDialogOpen] = useState(false)
+ 
 
   // Form state
   const [selectedInstrument, setSelectedInstrument] = useState("")
@@ -62,34 +62,6 @@ export function PriceTracking() {
       })
     } finally {
       setLoading(false)
-    }
-  }
-
-  async function handleSync() {
-    setSyncing(true)
-    try {
-      const response = await fetch("/api/prices/sync", { method: "POST" })
-      const data = await response.json()
-
-      if (!response.ok) {
-        throw new Error(data.error || "No se pudo sincronizar precios")
-      }
-
-      toast({
-        title: "Precios sincronizados",
-        description: `Actualizados ${data.updated || 0} instrumentos`,
-      })
-
-      fetchPrices()
-    } catch (error) {
-      console.error("[v0] Failed to sync prices:", error)
-      toast({
-        title: "Error",
-        description: error instanceof Error ? error.message : "No se pudieron sincronizar los precios",
-        variant: "destructive",
-      })
-    } finally {
-      setSyncing(false)
     }
   }
 
@@ -185,10 +157,6 @@ export function PriceTracking() {
             <Button variant="outline" size="sm" onClick={fetchPrices}>
               <RefreshCw className="h-4 w-4 mr-2" />
               Actualizar
-            </Button>
-            <Button variant="outline" size="sm" onClick={handleSync} disabled={syncing}>
-              <Radio className={`h-4 w-4 mr-2 ${syncing ? "animate-spin" : ""}`} />
-              {syncing ? "Sincronizando..." : "Sincronizar automático"}
             </Button>
             <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
               <DialogTrigger asChild>
