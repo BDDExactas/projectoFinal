@@ -18,7 +18,7 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { TrendingUp, TrendingDown, Plus, RefreshCw } from "lucide-react"
+import { TrendingUp, TrendingDown, Plus } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 import type { InstrumentPrice, Instrument } from "@/lib/db-types"
 
@@ -154,10 +154,6 @@ export function PriceTracking() {
             <CardDescription>Gestiona los precios históricos de tus instrumentos</CardDescription>
           </div>
           <div className="flex gap-2">
-            <Button variant="outline" size="sm" onClick={fetchPrices}>
-              <RefreshCw className="h-4 w-4 mr-2" />
-              Actualizar
-            </Button>
             <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
               <DialogTrigger asChild>
                 <Button size="sm">
