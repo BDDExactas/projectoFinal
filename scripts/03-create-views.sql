@@ -12,6 +12,7 @@ SELECT
   it.name AS instrument_type,
   ai.quantity,
   COALESCE(ip.price, 0) AS current_price,
+  COALESCE(tp.average_price, NULL) AS average_price,
   COALESCE(ai.quantity * ip.price, 0) AS valuation,
   ip.currency_code,
   ip.price_date
@@ -27,6 +28,12 @@ LEFT JOIN LATERAL (
   ORDER BY price_date DESC
   LIMIT 1
 ) ip ON true
+-- Average historical price for the instrument (average of all recorded prices)
+LEFT JOIN LATERAL (
+  SELECT AVG(ip.price) AS average_price
+  FROM instrument_prices ip
+  WHERE ip.instrument_id = i.id
+) tp ON true
 WHERE ai.quantity > 0;
 
 -- View: Total portfolio value by account

@@ -91,6 +91,7 @@ export interface AccountValuation {
   instrument_type: string
   quantity: number
   current_price: number
+  average_price?: number | null
   valuation: number
   currency_code: string
   price_date: Date
