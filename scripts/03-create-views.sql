@@ -13,7 +13,7 @@ LEFT JOIN LATERAL (
   SELECT price, price_date, as_of
   FROM instrument_prices
   WHERE instrument_id = i.id
-  ORDER BY as_of DESC NULLS LAST, price_date DESC
+  ORDER BY as_of DESC NULLS LAST, price_date DESC, created_at DESC
   LIMIT 1
 ) ip ON true
 WHERE it.code = 'cash'
@@ -45,7 +45,7 @@ LEFT JOIN LATERAL (
   SELECT price, currency_code, price_date, as_of
   FROM instrument_prices
   WHERE instrument_id = i.id
-  ORDER BY as_of DESC, price_date DESC
+  ORDER BY as_of DESC NULLS LAST, price_date DESC, created_at DESC
   LIMIT 1
 ) ip ON true
 LEFT JOIN v_currency_rates cr ON ip.currency_code = cr.currency_code
@@ -126,7 +126,7 @@ LEFT JOIN LATERAL (
   SELECT price, price_date, currency_code, as_of
   FROM instrument_prices
   WHERE instrument_id = i.id
-  ORDER BY as_of DESC, price_date DESC
+  ORDER BY as_of DESC NULLS LAST, price_date DESC, created_at DESC
   LIMIT 1
 ) ip_current ON true
 LEFT JOIN LATERAL (
@@ -134,6 +134,6 @@ LEFT JOIN LATERAL (
   FROM instrument_prices
   WHERE instrument_id = i.id
     AND as_of < ip_current.as_of
-  ORDER BY as_of DESC, price_date DESC
+  ORDER BY as_of DESC NULLS LAST, price_date DESC, created_at DESC
   LIMIT 1
 ) ip_previous ON true;
