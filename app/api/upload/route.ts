@@ -1,6 +1,7 @@
 import crypto from "crypto"
 import { promises as fs } from "fs"
 import path from "path"
+import os from "os"
 import { type NextRequest, NextResponse } from "next/server"
 import { sql } from "@/lib/db"
 
@@ -27,7 +28,9 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const uploadsDir = path.join(process.cwd(), "uploads")
+    // Use the system temporary directory on serverless hosts (e.g. Vercel)
+    // Writing to process.cwd() may fail on hosted platforms with read-only filesystem.
+    const uploadsDir = path.join(os.tmpdir(), "uploads")
     await fs.mkdir(uploadsDir, { recursive: true })
 
     // Convert file to buffer for processing and hashing
@@ -37,13 +40,14 @@ export async function POST(request: NextRequest) {
     const extension = path.extname(file.name) || ".xlsx"
     const savedFilename = `${hash}${extension}`
     const absolutePath = path.join(uploadsDir, savedFilename)
-    const relativePath = path.relative(process.cwd(), absolutePath)
+    // Store absolute path in DB so the processor can read it directly when available
+    const storedPath = absolutePath
 
     // Idempotency: if same hash already uploaded by this user, reuse the record
     const existing = await sql`
       SELECT id, filename, upload_date, status, rows_processed, errors_count, error_details
       FROM imported_files
-      WHERE user_id = ${userId} AND file_path = ${relativePath}
+      WHERE user_id = ${userId} AND file_path = ${storedPath}
       LIMIT 1
     `
 
@@ -63,7 +67,7 @@ export async function POST(request: NextRequest) {
     // Create file record in database
     const result = await sql`
       INSERT INTO imported_files (user_id, filename, status, file_path)
-      VALUES (${userId}, ${file.name}, 'pending', ${relativePath})
+      VALUES (${userId}, ${file.name}, 'pending', ${storedPath})
       RETURNING id, filename, upload_date, status, file_path
     `
 
@@ -72,7 +76,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       success: true,
       file: fileRecord,
-      filePath: relativePath,
+      filePath: storedPath,
       buffer: buffer.toString("base64"), // Send buffer for client-side processing
     })
   } catch (error) {
