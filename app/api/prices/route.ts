@@ -2,6 +2,9 @@ import { type NextRequest, NextResponse } from "next/server"
 import { query } from "@/lib/db"
 import type { InstrumentPrice } from "@/lib/db-types"
 
+// Keep a small recent history per instrument for UI change calculations without flooding the table
+const RECENT_PRICES_PER_INSTRUMENT = 5
+
 interface PriceWithInstrument extends InstrumentPrice {
   instrument_code: string
   instrument_name: string
@@ -34,9 +37,9 @@ export async function GET() {
       )
       SELECT *
       FROM ranked_prices
-      WHERE rn <= 5 -- keep recent history per instrument so previous-day prices stay visible
+      WHERE rn <= ${RECENT_PRICES_PER_INSTRUMENT}
       ORDER BY price_date DESC, as_of DESC NULLS LAST, created_at DESC, instrument_code ASC
-      LIMIT 300
+      LIMIT ${RECENT_PRICES_PER_INSTRUMENT * 60}
     `)
 
     return NextResponse.json({ prices })
