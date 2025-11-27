@@ -22,10 +22,10 @@ JOIN account_instruments ai ON a.id = ai.account_id
 JOIN instruments i ON ai.instrument_id = i.id
 JOIN instrument_types it ON i.instrument_type_id = it.id
 LEFT JOIN LATERAL (
-  SELECT price, currency_code, price_date
+  SELECT price, currency_code, price_date, as_of
   FROM instrument_prices
   WHERE instrument_id = i.id
-  ORDER BY price_date DESC
+  ORDER BY as_of DESC, price_date DESC
   LIMIT 1
 ) ip ON true
 -- Average historical price for the instrument (average of all recorded prices)
@@ -92,17 +92,17 @@ SELECT
 FROM instruments i
 JOIN instrument_types it ON i.instrument_type_id = it.id
 LEFT JOIN LATERAL (
-  SELECT price, price_date, currency_code
+  SELECT price, price_date, currency_code, as_of
   FROM instrument_prices
   WHERE instrument_id = i.id
-  ORDER BY price_date DESC
+  ORDER BY as_of DESC, price_date DESC
   LIMIT 1
 ) ip_current ON true
 LEFT JOIN LATERAL (
-  SELECT price, price_date
+  SELECT price, price_date, as_of
   FROM instrument_prices
   WHERE instrument_id = i.id
-    AND price_date < ip_current.price_date
-  ORDER BY price_date DESC
+    AND as_of < ip_current.as_of
+  ORDER BY as_of DESC, price_date DESC
   LIMIT 1
 ) ip_previous ON true;

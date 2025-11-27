@@ -9,6 +9,7 @@ import type { InstrumentPerformance } from "@/lib/db-types"
 export function PerformanceChart() {
   const [performance, setPerformance] = useState<InstrumentPerformance[]>([])
   const [loading, setLoading] = useState(true)
+  const PERFORMANCE_POLL_MS = 120_000
 
   useEffect(() => {
     async function fetchData() {
@@ -23,6 +24,12 @@ export function PerformanceChart() {
       }
     }
     fetchData()
+
+    const interval = setInterval(() => {
+      fetchData()
+    }, PERFORMANCE_POLL_MS)
+
+    return () => clearInterval(interval)
   }, [])
 
   if (loading) {

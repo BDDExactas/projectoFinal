@@ -22,6 +22,7 @@ export function HoldingsTable({ userId }: { userId: number }) {
   const [holdings, setHoldings] = useState<AccountValuation[]>([])
   const [loading, setLoading] = useState(true)
   const { toast } = useToast()
+  const VALUATIONS_POLL_MS = 120_000
 
   // Dialog state
   const [dialogOpen, setDialogOpen] = useState(false)
@@ -43,6 +44,12 @@ export function HoldingsTable({ userId }: { userId: number }) {
       }
     }
     fetchData()
+
+    const interval = setInterval(() => {
+      refresh()
+    }, VALUATIONS_POLL_MS)
+
+    return () => clearInterval(interval)
   }, [userId])
 
   async function refresh() {

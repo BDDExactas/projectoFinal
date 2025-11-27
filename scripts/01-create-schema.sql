@@ -34,6 +34,7 @@ CREATE TABLE IF NOT EXISTS instruments (
   instrument_type_id INTEGER REFERENCES instrument_types(id),
   code VARCHAR(50) UNIQUE NOT NULL, -- 'USD', 'ARS', 'AL30', 'BA24C', 'LOMA', 'METRD', 'YPFD'
   name VARCHAR(255) NOT NULL,
+  external_symbol VARCHAR(255), -- Provider-specific ticker (Finnhub, etc.)
   description TEXT,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
@@ -67,6 +68,7 @@ CREATE TABLE IF NOT EXISTS instrument_prices (
   price_date DATE NOT NULL,
   price DECIMAL(18, 8) NOT NULL,
   currency_code VARCHAR(10) NOT NULL DEFAULT 'ARS', -- Price currency
+  as_of TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP, -- precise timestamp of quote
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   UNIQUE(instrument_id, price_date)
 );
@@ -110,3 +112,4 @@ CREATE INDEX IF NOT EXISTS idx_transactions_date ON transactions(transaction_dat
 CREATE INDEX IF NOT EXISTS idx_transactions_file ON transactions(imported_file_id);
 CREATE INDEX IF NOT EXISTS idx_instrument_prices_instrument ON instrument_prices(instrument_id);
 CREATE INDEX IF NOT EXISTS idx_instrument_prices_date ON instrument_prices(price_date);
+CREATE INDEX IF NOT EXISTS idx_instrument_prices_asof ON instrument_prices(as_of DESC);

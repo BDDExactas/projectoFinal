@@ -21,6 +21,7 @@ export interface Instrument {
   instrument_type_id: number
   code: string
   name: string
+  external_symbol?: string
   description?: string
   created_at: Date
 }
@@ -50,6 +51,7 @@ export interface InstrumentPrice {
   price_date: Date
   price: number
   currency_code: string
+  as_of?: Date
   created_at: Date
 }
 

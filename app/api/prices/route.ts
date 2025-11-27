@@ -18,6 +18,7 @@ export async function GET() {
         ip.price_date,
         ip.price,
         ip.currency_code,
+        ip.as_of,
         ip.created_at,
         i.code as instrument_code,
         i.name as instrument_name,
@@ -25,7 +26,7 @@ export async function GET() {
       FROM instrument_prices ip
       JOIN instruments i ON ip.instrument_id = i.id
       JOIN instrument_types it ON i.instrument_type_id = it.id
-      ORDER BY ip.price_date DESC, i.code ASC
+      ORDER BY ip.as_of DESC, ip.price_date DESC, i.code ASC
       LIMIT 100
     `)
 

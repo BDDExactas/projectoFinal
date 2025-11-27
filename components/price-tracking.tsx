@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Badge } from "@/components/ui/badge"
+import { Alert, AlertDescription } from "@/components/ui/alert"
 import {
   Dialog,
   DialogContent,
@@ -26,7 +27,10 @@ interface PriceWithInstrument extends InstrumentPrice {
   instrument_code: string
   instrument_name: string
   instrument_type: string
+  as_of?: string
 }
+
+const PRICE_POLL_MS = 120_000
 
 export function PriceTracking() {
   const [prices, setPrices] = useState<PriceWithInstrument[]>([])
@@ -34,6 +38,9 @@ export function PriceTracking() {
   const [loading, setLoading] = useState(true)
   const { toast } = useToast()
   const [dialogOpen, setDialogOpen] = useState(false)
+  const [lastUpdated, setLastUpdated] = useState<string | null>(null)
+  const [syncLoading, setSyncLoading] = useState(false)
+  const [syncResult, setSyncResult] = useState<{ updated: number; errors: string[] } | null>(null)
  
 
   // Form state
@@ -46,13 +53,23 @@ export function PriceTracking() {
   useEffect(() => {
     fetchPrices()
     fetchInstruments()
+
+    const interval = setInterval(() => {
+      fetchPrices(true)
+    }, PRICE_POLL_MS)
+
+    return () => {
+      clearInterval(interval)
+    }
   }, [])
 
-  async function fetchPrices() {
+  async function fetchPrices(silent = false) {
     try {
+      if (!silent) setLoading(true)
       const response = await fetch("/api/prices")
       const data = await response.json()
       setPrices(data.prices || [])
+      setLastUpdated(new Date().toLocaleTimeString("es-AR"))
     } catch (error) {
       console.error("[v0] Failed to fetch prices:", error)
       toast({
@@ -61,7 +78,7 @@ export function PriceTracking() {
         variant: "destructive",
       })
     } finally {
-      setLoading(false)
+      if (!silent) setLoading(false)
     }
   }
 
@@ -123,6 +140,27 @@ export function PriceTracking() {
     setCurrencyCode("ARS")
   }
 
+  async function handleSync() {
+    setSyncLoading(true)
+    setSyncResult(null)
+    try {
+      const res = await fetch("/api/prices/sync", { method: "POST" })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || "No se pudieron actualizar los precios")
+      setSyncResult({ updated: data.updated ?? 0, errors: data.errors ?? [] })
+      await fetchPrices(true)
+    } catch (error) {
+      console.error("[v0] Sync error:", error)
+      toast({
+        title: "Error al sincronizar",
+        description: error instanceof Error ? error.message : "No se pudo actualizar",
+        variant: "destructive",
+      })
+    } finally {
+      setSyncLoading(false)
+    }
+  }
+
   function getPriceChange(currentPrice: number, index: number): { change: number; isPositive: boolean } | null {
     if (index >= prices.length - 1) return null
     const previousPrice = prices[index + 1]
@@ -152,8 +190,14 @@ export function PriceTracking() {
           <div>
             <CardTitle>Seguimiento de Precios</CardTitle>
             <CardDescription>Gestiona los precios históricos de tus instrumentos</CardDescription>
+            {lastUpdated && (
+              <p className="text-xs text-muted-foreground mt-1">Última actualización: {lastUpdated}</p>
+            )}
           </div>
           <div className="flex gap-2">
+            <Button variant="outline" size="sm" onClick={handleSync} disabled={syncLoading}>
+              {syncLoading ? "Actualizando..." : "Actualizar Precios"}
+            </Button>
             <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
               <DialogTrigger asChild>
                 <Button size="sm">
@@ -238,6 +282,33 @@ export function PriceTracking() {
         </div>
       </CardHeader>
       <CardContent>
+        {syncResult && (
+          <Alert
+            className={`mb-4 ${
+              syncResult.errors.length > 0 ? "border-amber-500/50 bg-amber-500/10" : "border-green-500/50 bg-green-500/10"
+            }`}
+          >
+            <AlertDescription
+              className={syncResult.errors.length > 0 ? "text-amber-800" : "text-green-700"}
+            >
+              {syncResult.errors.length === 0
+                ? `Actualización completada: ${syncResult.updated} precios actualizados.`
+                : `Actualización parcial: ${syncResult.updated} precios actualizados, ${syncResult.errors.length} errores.`}
+              {syncResult.errors.length > 0 && (
+                <ul className="mt-2 list-disc space-y-1 pl-4 text-sm">
+                  {syncResult.errors.slice(0, 3).map((err, idx) => (
+                    <li key={idx} className="text-amber-800">
+                      {err.toString()}
+                    </li>
+                  ))}
+                  {syncResult.errors.length > 3 && (
+                    <li className="text-amber-800">…y {syncResult.errors.length - 3} más</li>
+                  )}
+                </ul>
+              )}
+            </AlertDescription>
+          </Alert>
+        )}
         <Table>
           <TableHeader>
             <TableRow>
