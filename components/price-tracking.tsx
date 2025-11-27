@@ -96,13 +96,25 @@ export function PriceTracking() {
     e.preventDefault()
     setSubmitting(true)
 
+    const priceNumber = Number(priceValue.replace(',', '.'))
+    if (!selectedInstrument) {
+      toast({ title: "Instrumento requerido", description: "Selecciona un instrumento", variant: "destructive" })
+      setSubmitting(false)
+      return
+    }
+    if (!Number.isFinite(priceNumber) || priceNumber <= 0) {
+      toast({ title: "Precio inválido", description: "Ingresa un precio numérico mayor que 0", variant: "destructive" })
+      setSubmitting(false)
+      return
+    }
+
     try {
       const response = await fetch("/api/prices", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           instrument_id: Number.parseInt(selectedInstrument),
-          price: Number.parseFloat(priceValue),
+          price: priceNumber,
           price_date: priceDate,
           currency_code: currencyCode,
         }),
@@ -162,12 +174,16 @@ export function PriceTracking() {
   }
 
   function getPriceChange(currentPrice: number, index: number): { change: number; isPositive: boolean } | null {
-    if (index >= prices.length - 1) return null
-    const previousPrice = prices[index + 1]
-    if (previousPrice.instrument_code !== prices[index].instrument_code) return null
-
-    const change = ((currentPrice - Number(previousPrice.price)) / Number(previousPrice.price)) * 100
-    return { change, isPositive: change >= 0 }
+    // Find the next older price for the same instrument in the already-recency-sorted list
+    for (let j = index + 1; j < prices.length; j++) {
+      if (prices[j].instrument_code === prices[index].instrument_code) {
+        const previous = prices[j]
+        if (!previous.price || Number(previous.price) === 0) return null
+        const change = ((currentPrice - Number(previous.price)) / Number(previous.price)) * 100
+        return { change, isPositive: change >= 0 }
+      }
+    }
+    return null
   }
 
   if (loading) {

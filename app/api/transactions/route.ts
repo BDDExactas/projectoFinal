@@ -26,9 +26,9 @@ export async function POST(request: NextRequest) {
     // Optionally insert price
     if (price !== undefined && price !== null && Number.isFinite(Number(price)) && Number(price) > 0) {
       await sql`
-        INSERT INTO instrument_prices (instrument_id, price_date, price, currency_code)
-        VALUES (${instrumentId}, ${date || new Date().toISOString().slice(0, 10)}, ${Number(price)}, ${currency || 'ARS'})
-        ON CONFLICT (instrument_id, price_date) DO UPDATE SET price = EXCLUDED.price, currency_code = EXCLUDED.currency_code, created_at = CURRENT_TIMESTAMP
+        INSERT INTO instrument_prices (instrument_id, price_date, price, currency_code, as_of)
+        VALUES (${instrumentId}, ${date || new Date().toISOString().slice(0, 10)}, ${Number(price)}, ${currency || 'ARS'}, CURRENT_TIMESTAMP)
+        ON CONFLICT (instrument_id, price_date) DO UPDATE SET price = EXCLUDED.price, currency_code = EXCLUDED.currency_code, as_of = CURRENT_TIMESTAMP, created_at = CURRENT_TIMESTAMP
       `
     }
 
