@@ -55,8 +55,17 @@ export async function POST(request: NextRequest) {
     const body = await request.json()
     const { instrument_id, price, price_date, currency_code } = body
 
+    const instrumentIdNum = Number(instrument_id)
+
     // Validate required fields
-    if (!instrument_id || !price_date || !currency_code || !Number.isFinite(Number(price)) || Number(price) <= 0) {
+    if (
+      !price_date ||
+      !currency_code ||
+      !Number.isInteger(instrumentIdNum) ||
+      instrumentIdNum <= 0 ||
+      !Number.isFinite(Number(price)) ||
+      Number(price) <= 0
+    ) {
       return NextResponse.json({ error: "Missing or invalid required fields" }, { status: 400 })
     }
 
@@ -73,7 +82,7 @@ export async function POST(request: NextRequest) {
         created_at = CURRENT_TIMESTAMP
       RETURNING *
     `,
-      [instrument_id, price_date, price, currency_code],
+      [instrumentIdNum, price_date, price, currency_code],
     )
 
     return NextResponse.json({ success: true, price: result[0] })
