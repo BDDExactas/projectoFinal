@@ -309,7 +309,7 @@ export function PriceTracking() {
             >
               {syncResult.errors.length === 0
                 ? `Actualización completada: ${syncResult.updated} precios actualizados.`
-                : `Actualización parcial: ${syncResult.updated} precios actualizados, ${syncResult.errors.length} errores.`}
+                : `Actualización parcial: ${syncResult.updated} precios actualizados, ${syncResult.errors.length} no disponibles.`}
               {syncResult.errors.length > 0 && (
                 <ul className="mt-2 list-disc space-y-1 pl-4 text-sm">
                   {syncResult.errors.slice(0, 3).map((err, idx) => (
