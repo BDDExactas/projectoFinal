@@ -97,6 +97,8 @@ export interface AccountValuation {
   valuation: number
   currency_code: string
   price_date: Date
+  fx_rate_to_base?: number
+  valuation_base?: number
 }
 
 export interface PortfolioTotal {
@@ -106,8 +108,10 @@ export interface PortfolioTotal {
   user_name: string
   currency_code: string
   total_value: number
+  total_value_base?: number
   instruments_count: number
   last_price_date: Date
+  base_currency_code?: string
 }
 
 export interface TransactionHistory {

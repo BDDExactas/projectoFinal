@@ -191,7 +191,7 @@ export function PriceTracking() {
             <CardTitle>Seguimiento de Precios</CardTitle>
             <CardDescription>Gestiona los precios históricos de tus instrumentos</CardDescription>
             {lastUpdated && (
-              <p className="text-xs text-muted-foreground mt-1">Última actualización: {lastUpdated}</p>
+              <p className="text-xs text-muted-foreground mt-1">Última actualización contra base de datos: {lastUpdated}</p>
             )}
           </div>
           <div className="flex gap-2">

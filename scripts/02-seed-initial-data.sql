@@ -32,3 +32,10 @@ ON CONFLICT (code) DO NOTHING;
 INSERT INTO users (email, name, password_hash) VALUES
   ('demo@example.com', 'Usuario Demo', '$2a$12$zNbcQq1q4pYu3pDx2PzvUOiPSlCmC7R4mmuUS85HswkBcxizw6yxC')
 ON CONFLICT (email) DO NOTHING;
+
+-- Anchor base currency price to 1 for deterministic FX calculations
+INSERT INTO instrument_prices (instrument_id, price_date, price, currency_code)
+SELECT id, CURRENT_DATE, 1, 'ARS'
+FROM instruments
+WHERE code = 'ARS'
+ON CONFLICT (instrument_id, price_date) DO NOTHING;

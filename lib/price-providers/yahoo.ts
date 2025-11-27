@@ -30,3 +30,27 @@ export async function fetchYahooQuote(symbol: string): Promise<ProviderQuote> {
     currency: quote?.currency,
   }
 }
+
+// Fetches an FX quote (quoteCurrency/baseCurrency), returning price in baseCurrency per 1 quoteCurrency
+export async function fetchYahooFx(pairSymbol: string): Promise<ProviderQuote> {
+  const yahooFinance = new YahooFinance()
+  const quote = await yahooFinance.quote(pairSymbol, {
+    fields: ["regularMarketPrice", "regularMarketTime", "postMarketPrice", "postMarketTime", "preMarketPrice", "preMarketTime", "currency"],
+  })
+
+  const price = Number(quote?.regularMarketPrice ?? quote?.postMarketPrice ?? quote?.preMarketPrice)
+  const timeCandidate = quote?.regularMarketTime ?? quote?.postMarketTime ?? quote?.preMarketTime ?? null
+
+  if (!Number.isFinite(price) || price <= 0) {
+    throw new Error(`Yahoo Finance sin precio FX para ${pairSymbol}`)
+  }
+
+  const asOfDate = timeCandidate instanceof Date ? timeCandidate : new Date()
+
+  return {
+    price,
+    price_date: asOfDate.toISOString().slice(0, 10),
+    as_of: asOfDate.toISOString(),
+    currency: quote?.currency,
+  }
+}

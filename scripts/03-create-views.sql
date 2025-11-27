@@ -1,6 +1,24 @@
 -- Analytical views for dashboards
 
--- View: Account valuations with current prices
+-- View: Latest FX rates to base currency (price = base currency per 1 unit of currency_code)
+CREATE OR REPLACE VIEW v_currency_rates AS
+SELECT DISTINCT ON (i.code)
+  i.code AS currency_code,
+  COALESCE(ip.price, 1) AS rate_to_base,
+  COALESCE(ip.price_date, CURRENT_DATE) AS price_date,
+  COALESCE(ip.as_of, CURRENT_TIMESTAMP) AS as_of
+FROM instruments i
+JOIN instrument_types it ON i.instrument_type_id = it.id
+LEFT JOIN LATERAL (
+  SELECT price, price_date, as_of
+  FROM instrument_prices
+  WHERE instrument_id = i.id
+  ORDER BY as_of DESC NULLS LAST, price_date DESC
+  LIMIT 1
+) ip ON true
+WHERE it.code = 'cash'
+ORDER BY i.code, ip.as_of DESC NULLS LAST, ip.price_date DESC NULLS LAST;
+
 CREATE OR REPLACE VIEW v_account_valuations AS
 SELECT 
   a.id AS account_id,
@@ -15,7 +33,9 @@ SELECT
   COALESCE(tp.average_price, NULL) AS average_price,
   COALESCE(ai.quantity * ip.price, 0) AS valuation,
   ip.currency_code,
-  ip.price_date
+  ip.price_date,
+  COALESCE(cr.rate_to_base, 1) AS fx_rate_to_base,
+  COALESCE(ai.quantity * ip.price * COALESCE(cr.rate_to_base, 1), 0) AS valuation_base
 FROM accounts a
 JOIN users u ON a.user_id = u.id
 JOIN account_instruments ai ON a.id = ai.account_id
@@ -28,6 +48,7 @@ LEFT JOIN LATERAL (
   ORDER BY as_of DESC, price_date DESC
   LIMIT 1
 ) ip ON true
+LEFT JOIN v_currency_rates cr ON ip.currency_code = cr.currency_code
 -- Average historical price for the instrument (average of all recorded prices)
 LEFT JOIN LATERAL (
   SELECT AVG(ip.price) AS average_price
@@ -36,7 +57,6 @@ LEFT JOIN LATERAL (
 ) tp ON true
 WHERE ai.quantity > 0;
 
--- View: Total portfolio value by account
 CREATE OR REPLACE VIEW v_portfolio_totals AS
 SELECT 
   account_id,
@@ -45,8 +65,19 @@ SELECT
   user_name,
   currency_code,
   SUM(valuation) AS total_value,
+  SUM(valuation_base) AS total_value_base,
   COUNT(DISTINCT instrument_code) AS instruments_count,
-  MAX(price_date) AS last_price_date
+  MAX(price_date) AS last_price_date,
+  COALESCE(
+    (
+      SELECT currency_code
+      FROM v_currency_rates
+      WHERE rate_to_base = 1
+      ORDER BY currency_code
+      LIMIT 1
+    ),
+    'ARS'
+  ) AS base_currency_code
 FROM v_account_valuations
 GROUP BY account_id, account_name, user_id, user_name, currency_code;
 

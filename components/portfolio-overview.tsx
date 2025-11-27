@@ -24,7 +24,8 @@ export function PortfolioOverview({ userId }: { userId: number }) {
     fetchData()
   }, [userId])
 
-  const totalValue = portfolios.reduce((sum, p) => sum + Number(p.total_value), 0)
+  const baseCurrency = portfolios[0]?.base_currency_code || "ARS"
+  const totalValueBase = portfolios.reduce((sum, p) => sum + Number(p.total_value_base ?? p.total_value), 0)
 
   if (loading) {
     return (
@@ -50,7 +51,7 @@ export function PortfolioOverview({ userId }: { userId: number }) {
         </CardHeader>
         <CardContent>
           <div className="text-4xl font-bold text-primary">
-            ${totalValue.toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            {baseCurrency} ${totalValueBase.toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
           </div>
           <p className="text-sm text-muted-foreground mt-2">
             {portfolios.length} cuenta{portfolios.length !== 1 ? "s" : ""} activa{portfolios.length !== 1 ? "s" : ""}
@@ -66,7 +67,7 @@ export function PortfolioOverview({ userId }: { userId: number }) {
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold">
-                ${Number(portfolio.total_value).toLocaleString("es-AR", { minimumFractionDigits: 2 })}
+                {baseCurrency} ${Number(portfolio.total_value_base ?? portfolio.total_value).toLocaleString("es-AR", { minimumFractionDigits: 2 })}
               </div>
               <div className="flex items-center gap-2 mt-2 text-sm text-muted-foreground">
                 <span>{portfolio.instruments_count} instrumentos</span>

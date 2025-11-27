@@ -14,7 +14,7 @@ export async function GET(request: NextRequest) {
     const portfolios = await sql<PortfolioTotal[]>`
       SELECT * FROM v_portfolio_totals
       WHERE user_id = ${userId}
-      ORDER BY total_value DESC
+      ORDER BY total_value_base DESC NULLS LAST, total_value DESC
     `
 
     return NextResponse.json({ portfolios })
