@@ -5,25 +5,25 @@ import type { AccountValuation } from "@/lib/db-types"
 export async function GET(request: NextRequest) {
   try {
     const searchParams = request.nextUrl.searchParams
-    const userId = searchParams.get("userId")
-    const accountId = searchParams.get("accountId")
+    const userEmail = searchParams.get("userEmail")
+    const accountName = searchParams.get("accountName")
 
-    if (!userId) {
-      return NextResponse.json({ error: "User ID required" }, { status: 400 })
+    if (!userEmail) {
+      return NextResponse.json({ error: "User email required" }, { status: 400 })
     }
 
     let valuations: AccountValuation[]
 
-    if (accountId) {
+    if (accountName) {
       valuations = await sql<AccountValuation[]>`
         SELECT * FROM v_account_valuations
-        WHERE user_id = ${userId} AND account_id = ${accountId}
+        WHERE user_email = ${userEmail} AND account_name = ${accountName}
         ORDER BY valuation DESC
       `
     } else {
       valuations = await sql<AccountValuation[]>`
         SELECT * FROM v_account_valuations
-        WHERE user_id = ${userId}
+        WHERE user_email = ${userEmail}
         ORDER BY valuation DESC
       `
     }

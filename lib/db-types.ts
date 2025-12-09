@@ -1,7 +1,6 @@
 // TypeScript types for database entities
 
 export interface User {
-  id: number
   email: string
   name: string
   password_hash?: string
@@ -10,15 +9,13 @@ export interface User {
 }
 
 export interface InstrumentType {
-  id: number
   code: "cash" | "bond" | "stock" | "other"
   name: string
   description?: string
 }
 
 export interface Instrument {
-  id: number
-  instrument_type_id: number
+  instrument_type_code: InstrumentType["code"]
   code: string
   name: string
   external_symbol?: string
@@ -27,9 +24,9 @@ export interface Instrument {
 }
 
 export interface Account {
-  id: number
-  user_id: number
-  parent_account_id?: number
+  user_email: string
+  parent_user_email?: string | null
+  parent_account_name?: string | null
   name: string
   account_type: "bank_account" | "portfolio" | "grouped"
   bank_name?: string
@@ -38,16 +35,15 @@ export interface Account {
 }
 
 export interface AccountInstrument {
-  id: number
-  account_id: number
-  instrument_id: number
+  account_user_email: string
+  account_name: string
+  instrument_code: string
   quantity: number
   updated_at: Date
 }
 
 export interface InstrumentPrice {
-  id: number
-  instrument_id: number
+  instrument_code: string
   price_date: Date
   price: number
   currency_code: string
@@ -56,8 +52,7 @@ export interface InstrumentPrice {
 }
 
 export interface ImportedFile {
-  id: number
-  user_id: number
+  user_email: string
   filename: string
   file_path?: string
   upload_date: Date
@@ -68,10 +63,12 @@ export interface ImportedFile {
 }
 
 export interface Transaction {
-  id: number
-  account_id: number
-  instrument_id: number
-  imported_file_id?: number
+  account_user_email: string
+  account_name: string
+  instrument_code: string
+  imported_file_user_email?: string | null
+  imported_file_filename?: string | null
+  imported_file_upload_date?: Date | null
   transaction_date: Date
   transaction_type: "buy" | "sell" | "deposit" | "withdrawal" | "dividend" | "interest"
   quantity: number
@@ -84,9 +81,9 @@ export interface Transaction {
 
 // View types
 export interface AccountValuation {
-  account_id: number
+  account_user_email: string
   account_name: string
-  user_id: number
+  user_email: string
   user_name: string
   instrument_code: string
   instrument_name: string
@@ -102,9 +99,9 @@ export interface AccountValuation {
 }
 
 export interface PortfolioTotal {
-  account_id: number
+  account_user_email: string
   account_name: string
-  user_id: number
+  user_email: string
   user_name: string
   currency_code: string
   total_value: number
@@ -118,6 +115,7 @@ export interface TransactionHistory {
   transaction_id: number
   transaction_date: Date
   transaction_type: string
+  account_user_email: string
   account_name: string
   user_name: string
   instrument_code: string

@@ -1,65 +1,146 @@
 import { type NextRequest, NextResponse } from "next/server"
 import { sql } from "@/lib/db"
+import { transactionInputSchema, transactionUpdateSchema, type TransactionInput } from "@/lib/validation/transaction"
+
+const positiveTypes = ["buy", "deposit", "dividend", "interest"]
+
+const ensureAccount = async (userEmail: string, accountName: string) => {
+  const existingAccount = await sql`
+    SELECT name FROM accounts WHERE user_email = ${userEmail} AND name = ${accountName} LIMIT 1
+  `
+  if (existingAccount.length === 0) {
+    await sql`
+      INSERT INTO accounts (user_email, name, account_type)
+      VALUES (${userEmail}, ${accountName}, 'bank_account')
+      ON CONFLICT (user_email, name) DO NOTHING
+    `
+  }
+}
+
+const computeQuantityChange = (type: string, quantity: number) =>
+  positiveTypes.includes(type.toLowerCase()) ? quantity : -quantity
+
+const upsertInstrumentPrice = async (input: TransactionInput) => {
+  if (input.price !== undefined && Number.isFinite(input.price) && input.price > 0) {
+    await sql`
+      INSERT INTO instrument_prices (instrument_code, price_date, price, currency_code, as_of)
+      VALUES (${input.instrumentCode}, ${input.date}, ${input.price}, ${input.currency || "ARS"}, CURRENT_TIMESTAMP)
+      ON CONFLICT (instrument_code, price_date)
+      DO UPDATE SET price = EXCLUDED.price, currency_code = EXCLUDED.currency_code, as_of = CURRENT_TIMESTAMP, created_at = CURRENT_TIMESTAMP
+    `
+  }
+}
+
+export async function GET(request: NextRequest) {
+  try {
+    const { searchParams } = new URL(request.url)
+    const userEmail = searchParams.get("userEmail")
+    if (!userEmail) {
+      return NextResponse.json({ error: "userEmail es requerido" }, { status: 400 })
+    }
+
+    const accountName = searchParams.get("accountName")
+    const instrumentCode = searchParams.get("instrumentCode")
+    const startDate = searchParams.get("startDate")
+    const endDate = searchParams.get("endDate")
+    const limitRaw = Number(searchParams.get("limit") ?? "100")
+    const limit = Number.isFinite(limitRaw) && limitRaw > 0 ? Math.min(limitRaw, 500) : 100
+
+    const transactions = await sql`
+      SELECT 
+        user_email,
+        account_name,
+        instrument_code,
+        transaction_date,
+        transaction_type,
+        quantity,
+        price,
+        total_amount,
+        currency_code,
+        description,
+        created_at
+      FROM transactions
+      WHERE user_email = ${userEmail}
+        ${accountName ? sql`AND account_name = ${accountName}` : sql``}
+        ${instrumentCode ? sql`AND instrument_code = ${instrumentCode}` : sql``}
+        ${startDate ? sql`AND transaction_date >= ${startDate}` : sql``}
+        ${endDate ? sql`AND transaction_date <= ${endDate}` : sql``}
+      ORDER BY transaction_date DESC, created_at DESC
+      LIMIT ${limit}
+    `
+
+    return NextResponse.json({ transactions })
+  } catch (error) {
+    console.error("[v0] Fetch transactions error:", error)
+    return NextResponse.json({ error: "Failed to fetch transactions" }, { status: 500 })
+  }
+}
 
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
-    const { userId, accountId, instrumentCode, type, quantity, price, date, description, currency } = body
-
-    if (!userId || !accountId || !instrumentCode || !type || !quantity) {
-      return NextResponse.json({ error: "Missing required parameters" }, { status: 400 })
+    const validation = transactionInputSchema.safeParse(body)
+    if (!validation.success) {
+      return NextResponse.json({ error: validation.error.flatten().formErrors.join("; ") }, { status: 400 })
     }
+    const data = validation.data
 
-    const ttype = String(type).toLowerCase()
-    const allowed = ["buy", "sell", "deposit", "withdrawal", "dividend", "interest"]
-    if (!allowed.includes(ttype)) {
-      return NextResponse.json({ error: "Invalid transaction type" }, { status: 400 })
-    }
+    await ensureAccount(data.userEmail, data.accountName)
 
-    // Find instrument
-    const instrumentRes = await sql`SELECT id FROM instruments WHERE code = ${instrumentCode} LIMIT 1`
+    const instrumentRes = await sql`SELECT code FROM instruments WHERE code = ${data.instrumentCode} LIMIT 1`
     if (instrumentRes.length === 0) {
       return NextResponse.json({ error: "Instrument not found" }, { status: 404 })
     }
-    const instrumentId = instrumentRes[0].id
 
-    // Optionally insert price
-    if (price !== undefined && price !== null && Number.isFinite(Number(price)) && Number(price) > 0) {
-      await sql`
-        INSERT INTO instrument_prices (instrument_id, price_date, price, currency_code, as_of)
-        VALUES (${instrumentId}, ${date || new Date().toISOString().slice(0, 10)}, ${Number(price)}, ${currency || 'ARS'}, CURRENT_TIMESTAMP)
-        ON CONFLICT (instrument_id, price_date) DO UPDATE SET price = EXCLUDED.price, currency_code = EXCLUDED.currency_code, as_of = CURRENT_TIMESTAMP, created_at = CURRENT_TIMESTAMP
-      `
-    }
+    await upsertInstrumentPrice(data)
 
-    // Insert transaction
+    const totalAmount = data.total ?? (data.price ? data.price * data.quantity : null)
+
     await sql`
-      INSERT INTO transactions (account_id, instrument_id, transaction_date, transaction_type, quantity, price, total_amount, currency_code, description)
+      INSERT INTO transactions (
+        user_email, 
+        account_name, 
+        instrument_code,
+        transaction_date, 
+        transaction_type, 
+        quantity, 
+        price, 
+        total_amount,
+        currency_code,
+        description
+      )
       VALUES (
-        ${accountId},
-        ${instrumentId},
-        ${date || new Date().toISOString().slice(0, 10)},
-        ${ttype},
-        ${Number(quantity)},
-        ${price ?? null},
-        ${price ? Number(price) * Number(quantity) : null},
-        ${currency ?? 'ARS'},
-        ${description ?? null}
+        ${data.userEmail},
+        ${data.accountName},
+        ${data.instrumentCode},
+        ${data.date},
+        ${data.type},
+        ${data.quantity},
+        ${data.price ?? null},
+        ${totalAmount},
+        ${data.currency || "ARS"},
+        ${data.description ?? null}
       )
     `
 
-    // Update account_instruments
     const existing = await sql`
-      SELECT quantity FROM account_instruments WHERE account_id = ${accountId} AND instrument_id = ${instrumentId}
+      SELECT quantity FROM account_instruments WHERE user_email = ${data.userEmail} AND account_name = ${data.accountName} AND instrument_code = ${data.instrumentCode}
     `
 
-    const positiveTypes = ["buy", "deposit", "dividend", "interest"]
-    const qtyChange = positiveTypes.includes(ttype) ? Number(quantity) : -Number(quantity)
+    const qtyChange = computeQuantityChange(data.type, data.quantity)
 
     if (existing.length === 0) {
-      await sql`INSERT INTO account_instruments (account_id, instrument_id, quantity) VALUES (${accountId}, ${instrumentId}, ${qtyChange})`
+      await sql`
+        INSERT INTO account_instruments (user_email, account_name, instrument_code, quantity)
+        VALUES (${data.userEmail}, ${data.accountName}, ${data.instrumentCode}, ${qtyChange})
+      `
     } else {
-      await sql`UPDATE account_instruments SET quantity = quantity + ${qtyChange}, updated_at = CURRENT_TIMESTAMP WHERE account_id = ${accountId} AND instrument_id = ${instrumentId}`
+      await sql`
+        UPDATE account_instruments
+        SET quantity = quantity + ${qtyChange},
+            updated_at = CURRENT_TIMESTAMP
+        WHERE user_email = ${data.userEmail} AND account_name = ${data.accountName} AND instrument_code = ${data.instrumentCode}
+      `
     }
 
     return NextResponse.json({ success: true })
@@ -69,20 +150,144 @@ export async function POST(request: NextRequest) {
   }
 }
 
-// DELETE - Remove a holding (account_instrument)
+export async function PUT(request: NextRequest) {
+  try {
+    const body = await request.json()
+    const validation = transactionUpdateSchema.safeParse(body)
+    if (!validation.success) {
+      return NextResponse.json({ error: validation.error.flatten().formErrors.join("; ") }, { status: 400 })
+    }
+    const data = validation.data
+
+    const existingTx = await sql`
+      SELECT transaction_type, quantity, account_name, instrument_code
+      FROM transactions
+      WHERE user_email = ${data.userEmail}
+        AND account_name = ${data.accountName}
+        AND instrument_code = ${data.instrumentCode}
+        AND created_at = ${data.createdAt}
+      LIMIT 1
+    `
+
+    if (existingTx.length === 0) {
+      return NextResponse.json({ error: "Transaction not found" }, { status: 404 })
+    }
+
+    const current = existingTx[0]
+    if (current.account_name !== data.accountName || current.instrument_code !== data.instrumentCode) {
+      return NextResponse.json({ error: "No se puede cambiar la cuenta o el instrumento en una edición. Elimina y crea nuevamente." }, { status: 400 })
+    }
+
+    await ensureAccount(data.userEmail, data.accountName)
+
+    const instrumentRes = await sql`SELECT code FROM instruments WHERE code = ${data.instrumentCode} LIMIT 1`
+    if (instrumentRes.length === 0) {
+      return NextResponse.json({ error: "Instrument not found" }, { status: 404 })
+    }
+
+    await upsertInstrumentPrice(data)
+
+    const rollbackChange = -computeQuantityChange(current.transaction_type, Number(current.quantity))
+    const newChange = computeQuantityChange(data.type, data.quantity)
+
+    await sql`
+      UPDATE transactions
+      SET transaction_type = ${data.type},
+          quantity = ${data.quantity},
+          price = ${data.price ?? null},
+          total_amount = ${data.total ?? (data.price ? data.price * data.quantity : null)},
+          currency_code = ${data.currency || "ARS"},
+          description = ${data.description ?? null},
+          transaction_date = ${data.date}
+      WHERE user_email = ${data.userEmail}
+        AND account_name = ${data.accountName}
+        AND instrument_code = ${data.instrumentCode}
+        AND created_at = ${data.createdAt}
+    `
+
+      const holding = await sql`
+        SELECT quantity FROM account_instruments
+      WHERE user_email = ${data.userEmail} AND account_name = ${data.accountName} AND instrument_code = ${data.instrumentCode}
+      `
+
+    if (holding.length === 0) {
+      await sql`
+        INSERT INTO account_instruments (user_email, account_name, instrument_code, quantity)
+        VALUES (${data.userEmail}, ${data.accountName}, ${data.instrumentCode}, ${newChange})
+      `
+    } else {
+      await sql`
+        UPDATE account_instruments
+        SET quantity = quantity + ${rollbackChange} + ${newChange},
+            updated_at = CURRENT_TIMESTAMP
+        WHERE user_email = ${data.userEmail} AND account_name = ${data.accountName} AND instrument_code = ${data.instrumentCode}
+      `
+    }
+
+    return NextResponse.json({ success: true })
+  } catch (error) {
+    console.error("[v0] Update transaction error:", error)
+    return NextResponse.json({ error: "Failed to update transaction" }, { status: 500 })
+  }
+}
+
+// DELETE - Remove a transaction (preferred) or a holding (legacy path)
 export async function DELETE(request: NextRequest) {
   try {
     const body = await request.json()
-    const { userId, accountId, instrumentId } = body
+    const { userEmail, accountName, instrumentCode, createdAt } = body
 
-    if (!userId || !accountId || !instrumentId) {
+    if (!userEmail || !accountName || !instrumentCode) {
       return NextResponse.json({ error: "Missing required parameters" }, { status: 400 })
     }
 
+    // If createdAt is provided, delete the specific transaction and rollback holding quantity
+    if (createdAt) {
+      const txRes = await sql`
+        SELECT transaction_type, quantity FROM transactions
+        WHERE user_email = ${userEmail}
+          AND account_name = ${accountName}
+          AND instrument_code = ${instrumentCode}
+          AND created_at = ${createdAt}
+        LIMIT 1
+      `
+
+      if (txRes.length === 0) {
+        return NextResponse.json({ error: "Transaction not found" }, { status: 404 })
+      }
+
+      const rollbackChange = -computeQuantityChange(txRes[0].transaction_type, Number(txRes[0].quantity))
+
+      await sql`
+        DELETE FROM transactions
+        WHERE user_email = ${userEmail}
+          AND account_name = ${accountName}
+          AND instrument_code = ${instrumentCode}
+          AND created_at = ${createdAt}
+      `
+
+      const holdingUpdate = await sql`
+        UPDATE account_instruments
+        SET quantity = quantity + ${rollbackChange}, updated_at = CURRENT_TIMESTAMP
+        WHERE user_email = ${userEmail} AND account_name = ${accountName} AND instrument_code = ${instrumentCode}
+        RETURNING quantity
+      `
+
+      if (holdingUpdate.length === 0) {
+        await sql`
+          INSERT INTO account_instruments (user_email, account_name, instrument_code, quantity)
+          VALUES (${userEmail}, ${accountName}, ${instrumentCode}, ${rollbackChange})
+        `
+      }
+
+      return NextResponse.json({ success: true })
+    }
+
+    // Legacy: remove entire holding
     const result = await sql`
       DELETE FROM account_instruments
-      WHERE account_id = ${accountId} AND instrument_id = ${instrumentId}
-      RETURNING id
+      WHERE user_email = ${userEmail} AND account_name = ${accountName} AND instrument_code = ${instrumentCode}
+      RETURNING instrument_code
     `
 
     if (result.length === 0) {
@@ -91,7 +296,7 @@ export async function DELETE(request: NextRequest) {
 
     return NextResponse.json({ success: true })
   } catch (error) {
-    console.error("[v0] Delete holding error:", error)
-    return NextResponse.json({ error: "Failed to delete holding" }, { status: 500 })
+    console.error("[v0] Delete transaction/holding error:", error)
+    return NextResponse.json({ error: "Failed to delete" }, { status: 500 })
   }
 }

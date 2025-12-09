@@ -7,9 +7,8 @@ export async function GET() {
   try {
     const instruments = await query<Instrument>(`
       SELECT 
-        i.id,
-        i.instrument_type_id,
         i.code,
+        i.instrument_type_code,
         i.name,
         i.description,
         i.created_at

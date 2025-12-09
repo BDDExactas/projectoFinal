@@ -25,7 +25,7 @@ export async function POST(request: NextRequest) {
     const passwordHash = await bcrypt.hash(parsed.data.password, 12)
 
     const existing = await sql<User[]>`
-      SELECT id FROM users WHERE email = ${email} LIMIT 1
+      SELECT email FROM users WHERE email = ${email} LIMIT 1
     `
 
     if (existing.length > 0) {
@@ -35,13 +35,13 @@ export async function POST(request: NextRequest) {
     const result = await sql<User[]>`
       INSERT INTO users (email, name, password_hash)
       VALUES (${email}, ${name}, ${passwordHash})
-      RETURNING id, email, name, created_at, updated_at
+      RETURNING email, name, created_at, updated_at
     `
 
     const user = result[0]
 
     const response = NextResponse.json({ user })
-    setSessionCookie(response, { userId: user.id, email: user.email, name: user.name })
+    setSessionCookie(response, { email: user.email, name: user.name })
 
     return response
   } catch (error) {

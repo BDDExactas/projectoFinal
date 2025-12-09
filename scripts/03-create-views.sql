@@ -8,11 +8,11 @@ SELECT DISTINCT ON (i.code)
   COALESCE(ip.price_date, CURRENT_DATE) AS price_date,
   COALESCE(ip.as_of, CURRENT_TIMESTAMP) AS as_of
 FROM instruments i
-JOIN instrument_types it ON i.instrument_type_id = it.id
+JOIN instrument_types it ON i.instrument_type_code = it.code
 LEFT JOIN LATERAL (
   SELECT price, price_date, as_of
   FROM instrument_prices
-  WHERE instrument_id = i.id
+  WHERE instrument_code = i.code
   ORDER BY price_date DESC, as_of DESC NULLS LAST, created_at DESC
   LIMIT 1
 ) ip ON true
@@ -21,9 +21,9 @@ ORDER BY i.code, ip.price_date DESC NULLS LAST, ip.as_of DESC NULLS LAST;
 
 CREATE OR REPLACE VIEW v_account_valuations AS
 SELECT 
-  a.id AS account_id,
+  ai.user_email AS account_user_email,
   a.name AS account_name,
-  a.user_id,
+  a.user_email,
   u.name AS user_name,
   i.code AS instrument_code,
   i.name AS instrument_name,
@@ -37,14 +37,14 @@ SELECT
   COALESCE(cr.rate_to_base, 1) AS fx_rate_to_base,
   COALESCE(ai.quantity * ip.price * COALESCE(cr.rate_to_base, 1), 0) AS valuation_base
 FROM accounts a
-JOIN users u ON a.user_id = u.id
-JOIN account_instruments ai ON a.id = ai.account_id
-JOIN instruments i ON ai.instrument_id = i.id
-JOIN instrument_types it ON i.instrument_type_id = it.id
+JOIN users u ON a.user_email = u.email
+JOIN account_instruments ai ON a.user_email = ai.user_email AND a.name = ai.account_name
+JOIN instruments i ON ai.instrument_code = i.code
+JOIN instrument_types it ON i.instrument_type_code = it.code
 LEFT JOIN LATERAL (
   SELECT price, currency_code, price_date, as_of
   FROM instrument_prices
-  WHERE instrument_id = i.id
+  WHERE instrument_code = i.code
   ORDER BY price_date DESC, as_of DESC NULLS LAST, created_at DESC
   LIMIT 1
 ) ip ON true
@@ -53,15 +53,15 @@ LEFT JOIN v_currency_rates cr ON ip.currency_code = cr.currency_code
 LEFT JOIN LATERAL (
   SELECT AVG(ip.price) AS average_price
   FROM instrument_prices ip
-  WHERE ip.instrument_id = i.id
+  WHERE ip.instrument_code = i.code
 ) tp ON true
 WHERE ai.quantity > 0;
 
 CREATE OR REPLACE VIEW v_portfolio_totals AS
 SELECT 
-  account_id,
+  account_user_email,
   account_name,
-  user_id,
+  user_email,
   user_name,
   currency_code,
   SUM(valuation) AS total_value,
@@ -79,17 +79,18 @@ SELECT
     'ARS'
   ) AS base_currency_code
 FROM v_account_valuations
-GROUP BY account_id, account_name, user_id, user_name, currency_code;
+GROUP BY account_user_email, account_name, user_email, user_name, currency_code;
 
 -- View: Transaction history with details
 CREATE OR REPLACE VIEW v_transaction_history AS
 SELECT 
-  t.id AS transaction_id,
+  ROW_NUMBER() OVER (ORDER BY t.transaction_date DESC, t.created_at DESC) AS transaction_id,
   t.transaction_date,
   t.transaction_type,
-  a.name AS account_name,
+  t.user_email AS account_user_email,
+  t.account_name,
   u.name AS user_name,
-  i.code AS instrument_code,
+  t.instrument_code,
   i.name AS instrument_name,
   t.quantity,
   t.price,
@@ -98,10 +99,12 @@ SELECT
   t.description,
   if_table.filename AS source_file
 FROM transactions t
-JOIN accounts a ON t.account_id = a.id
-JOIN users u ON a.user_id = u.id
-JOIN instruments i ON t.instrument_id = i.id
-LEFT JOIN imported_files if_table ON t.imported_file_id = if_table.id
+JOIN users u ON t.user_email = u.email
+JOIN instruments i ON t.instrument_code = i.code
+LEFT JOIN imported_files if_table 
+  ON t.user_email = if_table.user_email 
+ AND t.file_filename = if_table.filename 
+ AND t.file_upload_date = if_table.upload_date
 ORDER BY t.transaction_date DESC;
 
 -- View: Instrument performance (price changes)
@@ -121,18 +124,18 @@ SELECT
   END AS price_change_percent,
   ip_current.currency_code
 FROM instruments i
-JOIN instrument_types it ON i.instrument_type_id = it.id
+JOIN instrument_types it ON i.instrument_type_code = it.code
 LEFT JOIN LATERAL (
   SELECT price, price_date, currency_code, as_of
   FROM instrument_prices
-  WHERE instrument_id = i.id
+  WHERE instrument_code = i.code
   ORDER BY price_date DESC, as_of DESC NULLS LAST, created_at DESC
   LIMIT 1
 ) ip_current ON true
 LEFT JOIN LATERAL (
   SELECT price, price_date, as_of
   FROM instrument_prices
-  WHERE instrument_id = i.id
+  WHERE instrument_code = i.code
     AND as_of < ip_current.as_of
   ORDER BY price_date DESC, as_of DESC NULLS LAST, created_at DESC
   LIMIT 1

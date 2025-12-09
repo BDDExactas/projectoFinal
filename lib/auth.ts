@@ -8,7 +8,6 @@ const SESSION_COOKIE_NAME = "session_token"
 const SESSION_MAX_AGE = 60 * 60 * 24 * 30 // 30 days
 
 interface SessionPayload {
-  userId: number
   email: string
   name: string
 }
@@ -86,7 +85,7 @@ function verifySession(token: string): SessionPayload | null {
     }
 
     const payload = JSON.parse(payloadString)
-    if (!payload?.userId || !payload?.email) return null
+    if (!payload?.email) return null
 
     return payload
   } catch (error) {
@@ -95,11 +94,11 @@ function verifySession(token: string): SessionPayload | null {
   }
 }
 
-async function findUserById(userId: number) {
+async function findUserByEmail(email: string) {
   const users = await sql<User[]>`
-    SELECT id, email, name, created_at, updated_at
+    SELECT email, name, created_at, updated_at
     FROM users
-    WHERE id = ${userId}
+    WHERE email = ${email}
     LIMIT 1
   `
   return users[0] ?? null
@@ -112,7 +111,7 @@ export async function getUserFromRequest(request: NextRequest): Promise<User | n
   const payload = verifySession(token)
   if (!payload) return null
 
-  return findUserById(payload.userId)
+  return findUserByEmail(payload.email)
 }
 
 export async function getUserFromCookies(): Promise<User | null> {
@@ -123,7 +122,7 @@ export async function getUserFromCookies(): Promise<User | null> {
   const payload = verifySession(token)
   if (!payload) return null
 
-  return findUserById(payload.userId)
+  return findUserByEmail(payload.email)
 }
 
 export function setSessionCookie(response: Response & { cookies: any }, payload: SessionPayload) {

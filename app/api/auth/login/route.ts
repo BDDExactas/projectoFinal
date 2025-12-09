@@ -23,7 +23,7 @@ export async function POST(request: NextRequest) {
     const password = parsed.data.password
 
     const users = await sql<User[]>`
-      SELECT id, email, name, password_hash, created_at, updated_at
+      SELECT email, name, password_hash, created_at, updated_at
       FROM users
       WHERE email = ${email}
       LIMIT 1
@@ -41,8 +41,8 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Correo o contraseña incorrectos" }, { status: 401 })
     }
 
-    const response = NextResponse.json({ user: { id: user.id, email: user.email, name: user.name } })
-    setSessionCookie(response, { userId: user.id, email: user.email, name: user.name })
+    const response = NextResponse.json({ user: { email: user.email, name: user.name } })
+    setSessionCookie(response, { email: user.email, name: user.name })
 
     return response
   } catch (error) {

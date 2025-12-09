@@ -5,14 +5,14 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Wallet } from "lucide-react"
 import type { PortfolioTotal } from "@/lib/db-types"
 
-export function PortfolioOverview({ userId }: { userId: number }) {
+export function PortfolioOverview({ userEmail }: { userEmail: string }) {
   const [portfolios, setPortfolios] = useState<PortfolioTotal[]>([])
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
     async function fetchData() {
       try {
-        const response = await fetch(`/api/dashboard/portfolio-totals?userId=${userId}`)
+        const response = await fetch(`/api/dashboard/portfolio-totals?userEmail=${encodeURIComponent(userEmail)}`)
         const data = await response.json()
         setPortfolios(data.portfolios || [])
       } catch (error) {
@@ -22,7 +22,7 @@ export function PortfolioOverview({ userId }: { userId: number }) {
       }
     }
     fetchData()
-  }, [userId])
+  }, [userEmail])
 
   const baseCurrency = portfolios[0]?.base_currency_code || "ARS"
   const totalValueBase = portfolios.reduce((sum, p) => sum + Number(p.total_value_base ?? p.total_value), 0)
@@ -61,7 +61,7 @@ export function PortfolioOverview({ userId }: { userId: number }) {
 
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
         {portfolios.map((portfolio) => (
-          <Card key={portfolio.account_id} className="hover:border-primary/50 transition-colors">
+          <Card key={`${portfolio.account_user_email}:${portfolio.account_name}`} className="hover:border-primary/50 transition-colors">
             <CardHeader className="pb-3">
               <CardTitle className="text-base font-medium">{portfolio.account_name}</CardTitle>
             </CardHeader>

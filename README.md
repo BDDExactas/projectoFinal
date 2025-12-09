@@ -4,6 +4,8 @@ DESCRIPCION GENERAL
 
 Este proyecto es una plataforma web diseñada para simplificar la gestión de carteras de inversión. El sistema permite a los usuarios mantener un control centralizado de sus cuentas bancarias y portfolios, registrar transacciones financieras, gestionar instrumentos financieros y monitorear la valorización de sus tenencias.
 
+Nota: la carga por Excel fue reemplazada por formularios CRUD en la pestaña "Transacciones" de la app.
+
 El modelo financiero se basa en tres conceptos principales:
 
 1. Cuentas (Accounts)

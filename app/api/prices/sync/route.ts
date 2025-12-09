@@ -4,7 +4,6 @@ import { BASE_CURRENCY, buildFxSymbol } from "@/lib/currency"
 import { fetchYahooQuote, fetchYahooFx } from "@/lib/price-providers/yahoo"
 
 interface InstrumentRow {
-  id: number
   code: string
   external_symbol?: string
   instrument_type: string
@@ -16,10 +15,10 @@ export async function POST() {
   try {
     const instruments = await query<InstrumentRow>(
       `
-        SELECT i.id, i.code, i.external_symbol, it.code AS instrument_type
+        SELECT i.code, i.external_symbol, it.code AS instrument_type
         FROM instruments i
-        JOIN instrument_types it ON i.instrument_type_id = it.id
-        ORDER BY i.id
+        JOIN instrument_types it ON i.instrument_type_code = it.code
+        ORDER BY i.code
         LIMIT $1
       `,
       [MAX_INSTRUMENTS],
@@ -40,12 +39,12 @@ export async function POST() {
           try {
             await query(
               `
-                INSERT INTO instrument_prices (instrument_id, price_date, price, currency_code, as_of)
+                INSERT INTO instrument_prices (instrument_code, price_date, price, currency_code, as_of)
                 VALUES ($1, CURRENT_DATE, 1, $2, CURRENT_TIMESTAMP)
-                ON CONFLICT (instrument_id, price_date)
+                ON CONFLICT (instrument_code, price_date)
                 DO UPDATE SET price = 1, currency_code = $2, as_of = CURRENT_TIMESTAMP, created_at = CURRENT_TIMESTAMP
               `,
-              [instrument.id, BASE_CURRENCY],
+              [instrument.code, BASE_CURRENCY],
             )
             updated++
           } catch (error) {
@@ -66,16 +65,16 @@ export async function POST() {
           const quote = await fetchYahooFx(pairSymbol)
           await query(
             `
-              INSERT INTO instrument_prices (instrument_id, price_date, price, currency_code, as_of)
+              INSERT INTO instrument_prices (instrument_code, price_date, price, currency_code, as_of)
               VALUES ($1, $2, $3, $4, $5)
-              ON CONFLICT (instrument_id, price_date)
+              ON CONFLICT (instrument_code, price_date)
               DO UPDATE SET 
                 price = EXCLUDED.price, 
                 currency_code = EXCLUDED.currency_code, 
                 as_of = EXCLUDED.as_of,
                 created_at = CURRENT_TIMESTAMP
             `,
-            [instrument.id, quote.price_date, quote.price, BASE_CURRENCY, quote.as_of],
+            [instrument.code, quote.price_date, quote.price, BASE_CURRENCY, quote.as_of],
           )
           updated++
         } catch (error) {
@@ -98,16 +97,16 @@ export async function POST() {
 
         await query(
           `
-            INSERT INTO instrument_prices (instrument_id, price_date, price, currency_code, as_of)
+            INSERT INTO instrument_prices (instrument_code, price_date, price, currency_code, as_of)
             VALUES ($1, $2, $3, $4, $5)
-            ON CONFLICT (instrument_id, price_date)
+            ON CONFLICT (instrument_code, price_date)
             DO UPDATE SET 
               price = EXCLUDED.price, 
               currency_code = EXCLUDED.currency_code, 
               as_of = EXCLUDED.as_of,
               created_at = CURRENT_TIMESTAMP
           `,
-          [instrument.id, quote.price_date, quote.price, currency, quote.as_of],
+          [instrument.code, quote.price_date, quote.price, currency, quote.as_of],
         )
         updated++
       } catch (error) {

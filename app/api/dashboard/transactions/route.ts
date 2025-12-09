@@ -5,16 +5,16 @@ import type { TransactionHistory } from "@/lib/db-types"
 export async function GET(request: NextRequest) {
   try {
     const searchParams = request.nextUrl.searchParams
-    const userId = searchParams.get("userId")
+    const userEmail = searchParams.get("userEmail")
     const limit = searchParams.get("limit") || "50"
 
-    if (!userId) {
-      return NextResponse.json({ error: "User ID required" }, { status: 400 })
+    if (!userEmail) {
+      return NextResponse.json({ error: "User email required" }, { status: 400 })
     }
 
     const transactions = await sql<TransactionHistory[]>`
       SELECT * FROM v_transaction_history
-      WHERE user_name IN (SELECT name FROM users WHERE id = ${userId})
+      WHERE account_user_email = ${userEmail}
       ORDER BY transaction_date DESC
       LIMIT ${limit}
     `

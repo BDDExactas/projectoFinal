@@ -31,6 +31,7 @@ interface PriceWithInstrument extends InstrumentPrice {
 }
 
 const PRICE_POLL_MS = 120_000
+type PriceKey = { instrument_code: string; price_date: string }
 
 export function PriceTracking() {
   const [prices, setPrices] = useState<PriceWithInstrument[]>([])
@@ -43,7 +44,7 @@ export function PriceTracking() {
   const [syncResult, setSyncResult] = useState<{ updated: number; errors: string[] } | null>(null)
  
   // Inline edit state
-  const [editingId, setEditingId] = useState<number | null>(null)
+  const [editingKey, setEditingKey] = useState<PriceKey | null>(null)
   const [editPrice, setEditPrice] = useState("")
   const [editDate, setEditDate] = useState("")
 
@@ -117,7 +118,7 @@ export function PriceTracking() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          instrument_id: Number.parseInt(selectedInstrument),
+          instrument_code: selectedInstrument,
           price: priceNumber,
           price_date: priceDate,
           currency_code: currencyCode,
@@ -190,7 +191,10 @@ export function PriceTracking() {
     return null
   }
 
-  async function handleUpdatePrice(id: number) {
+  const toDateString = (value: string | Date) =>
+    typeof value === "string" ? value.slice(0, 10) : value.toISOString().slice(0, 10)
+
+  async function handleUpdatePrice(key: PriceKey) {
     const priceNum = Number(editPrice.replace(',', '.'))
     if (!Number.isFinite(priceNum) || priceNum <= 0) {
       toast({ title: "Precio inválido", description: "Ingresa un precio numérico mayor que 0", variant: "destructive" })
@@ -202,9 +206,9 @@ export function PriceTracking() {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          price_id: id,
+          instrument_code: key.instrument_code,
+          price_date: editDate || key.price_date,
           price: priceNum,
-          price_date: editDate,
         }),
       })
 
@@ -213,7 +217,7 @@ export function PriceTracking() {
         throw new Error(data.error || "Error al actualizar")
       }
 
-      setEditingId(null)
+      setEditingKey(null)
       await fetchPrices()
       toast({ title: "Exito", description: "Precio actualizado" })
     } catch (error) {
@@ -226,14 +230,14 @@ export function PriceTracking() {
     }
   }
 
-  async function handleDeletePrice(id: number) {
+  async function handleDeletePrice(key: PriceKey) {
     if (!confirm("Estás seguro de que quieres eliminar este precio?")) return
 
     try {
       const res = await fetch("/api/prices", {
         method: "DELETE",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ price_id: id }),
+        body: JSON.stringify({ instrument_code: key.instrument_code, price_date: key.price_date }),
       })
 
       if (!res.ok) {
@@ -302,7 +306,7 @@ export function PriceTracking() {
                       </SelectTrigger>
                       <SelectContent>
                         {instruments.map((instrument) => (
-                          <SelectItem key={instrument.id} value={instrument.id.toString()}>
+                          <SelectItem key={instrument.code} value={instrument.code}>
                             {instrument.code} - {instrument.name}
                           </SelectItem>
                         ))}
@@ -413,9 +417,15 @@ export function PriceTracking() {
             ) : (
               prices.map((price, index) => {
                 const priceChange = getPriceChange(Number(price.price), index)
-                const isEditing = editingId === price.id
+                const rowKey: PriceKey = {
+                  instrument_code: price.instrument_code,
+                  price_date: toDateString(price.price_date),
+                }
+                const isEditing =
+                  editingKey?.instrument_code === rowKey.instrument_code &&
+                  editingKey?.price_date === rowKey.price_date
                 return (
-                  <TableRow key={`${price.id}-${price.price_date}`}>
+                  <TableRow key={`${rowKey.instrument_code}-${rowKey.price_date}`}>
                     <TableCell className="font-medium">{price.instrument_code}</TableCell>
                     <TableCell>
                       <Badge variant="outline">{price.instrument_type}</Badge>
@@ -472,7 +482,7 @@ export function PriceTracking() {
                           <Button
                             size="sm"
                             variant="default"
-                            onClick={() => handleUpdatePrice(price.id)}
+                            onClick={() => handleUpdatePrice(rowKey)}
                             className="h-7 px-2 text-xs"
                           >
                             Guardar
@@ -480,7 +490,11 @@ export function PriceTracking() {
                           <Button
                             size="sm"
                             variant="outline"
-                            onClick={() => setEditingId(null)}
+                            onClick={() => {
+                              setEditingKey(null)
+                              setEditPrice("")
+                              setEditDate("")
+                            }}
                             className="h-7 px-2 text-xs"
                           >
                             Cancelar
@@ -492,9 +506,9 @@ export function PriceTracking() {
                             size="sm"
                             variant="outline"
                             onClick={() => {
-                              setEditingId(price.id)
+                              setEditingKey(rowKey)
                               setEditPrice(Number(price.price).toString())
-                              setEditDate(price.price_date)
+                              setEditDate(toDateString(price.price_date))
                             }}
                             className="h-7 px-2 text-xs"
                           >
@@ -503,7 +517,7 @@ export function PriceTracking() {
                           <Button
                             size="sm"
                             variant="destructive"
-                            onClick={() => handleDeletePrice(price.id)}
+                            onClick={() => handleDeletePrice(rowKey)}
                             className="h-7 px-2 text-xs"
                           >
                             Borrar

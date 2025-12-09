@@ -4,7 +4,7 @@ import { PortfolioOverview } from "@/components/portfolio-overview"
 import { HoldingsTable } from "@/components/holdings-table"
 import { PerformanceChart } from "@/components/performance-chart"
 import { TransactionsList } from "@/components/transactions-list"
-import { FileUpload } from "@/components/file-upload"
+import { TransactionsCrud } from "@/components/transactions-crud"
 import { PriceTracking } from "@/components/price-tracking"
 import { DatabaseInitializer } from "@/components/database-initializer"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
@@ -32,7 +32,7 @@ export default function DashboardPage() {
     )
   }
 
-  const userId = user.id
+  const userEmail = user.email
 
   return (
     <div className="min-h-screen bg-background">
@@ -73,28 +73,28 @@ export default function DashboardPage() {
             <TabsTrigger value="dashboard">Dashboard</TabsTrigger>
             <TabsTrigger value="holdings">Tenencias</TabsTrigger>
             <TabsTrigger value="prices">Precios</TabsTrigger>
-            <TabsTrigger value="upload">Cargar Datos</TabsTrigger>
+            <TabsTrigger value="transactions">Transacciones</TabsTrigger>
           </TabsList>
 
           <TabsContent value="dashboard" className="space-y-6">
-            <PortfolioOverview userId={userId} />
+            <PortfolioOverview userEmail={userEmail} />
 
             <div className="grid gap-6 lg:grid-cols-2">
               <PerformanceChart />
-              <TransactionsList userId={userId} />
+              <TransactionsList userEmail={userEmail} />
             </div>
           </TabsContent>
 
           <TabsContent value="holdings" className="space-y-6">
-            <HoldingsTable userId={userId} />
+            <HoldingsTable userEmail={userEmail} />
           </TabsContent>
 
           <TabsContent value="prices" className="space-y-6">
             <PriceTracking />
           </TabsContent>
 
-          <TabsContent value="upload" className="space-y-6">
-            <FileUpload userId={userId} />
+          <TabsContent value="transactions" className="space-y-6">
+            <TransactionsCrud userEmail={userEmail} />
           </TabsContent>
         </Tabs>
       </main>

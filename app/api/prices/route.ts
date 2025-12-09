@@ -17,23 +17,21 @@ export async function GET() {
     const prices = await query<PriceWithInstrument>(`
       WITH ranked_prices AS (
         SELECT
-          ip.id,
-          ip.instrument_id,
+          ip.instrument_code,
           ip.price_date,
           ip.price,
           ip.currency_code,
           ip.as_of,
           ip.created_at,
-          i.code AS instrument_code,
           i.name AS instrument_name,
           it.code AS instrument_type,
           ROW_NUMBER() OVER (
-            PARTITION BY ip.instrument_id
+            PARTITION BY ip.instrument_code
             ORDER BY ip.price_date DESC, ip.as_of DESC NULLS LAST, ip.created_at DESC
           ) AS rn
         FROM instrument_prices ip
-        JOIN instruments i ON ip.instrument_id = i.id
-        JOIN instrument_types it ON i.instrument_type_id = it.id
+        JOIN instruments i ON ip.instrument_code = i.code
+        JOIN instrument_types it ON i.instrument_type_code = it.code
       )
       SELECT *
       FROM ranked_prices
@@ -53,16 +51,13 @@ export async function GET() {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
-    const { instrument_id, price, price_date, currency_code } = body
-
-    const instrumentIdNum = Number(instrument_id)
+    const { instrument_code, price, price_date, currency_code } = body
 
     // Validate required fields
     if (
       !price_date ||
       !currency_code ||
-      !Number.isInteger(instrumentIdNum) ||
-      instrumentIdNum <= 0 ||
+      !instrument_code ||
       !Number.isFinite(Number(price)) ||
       Number(price) <= 0
     ) {
@@ -72,9 +67,9 @@ export async function POST(request: NextRequest) {
     // Insert or update price (upsert)
     const result = await query<InstrumentPrice>(
       `
-      INSERT INTO instrument_prices (instrument_id, price_date, price, currency_code, as_of)
+      INSERT INTO instrument_prices (instrument_code, price_date, price, currency_code, as_of)
       VALUES ($1, $2, $3, $4, CURRENT_TIMESTAMP)
-      ON CONFLICT (instrument_id, price_date)
+      ON CONFLICT (instrument_code, price_date)
       DO UPDATE SET 
         price = EXCLUDED.price,
         currency_code = EXCLUDED.currency_code,
@@ -82,7 +77,7 @@ export async function POST(request: NextRequest) {
         created_at = CURRENT_TIMESTAMP
       RETURNING *
     `,
-      [instrumentIdNum, price_date, price, currency_code],
+      [instrument_code, price_date, price, currency_code],
     )
 
     return NextResponse.json({ success: true, price: result[0] })
@@ -96,11 +91,9 @@ export async function POST(request: NextRequest) {
 export async function PUT(request: NextRequest) {
   try {
     const body = await request.json()
-    const { price_id, price, price_date } = body
+    const { instrument_code, price_date, price } = body
 
-    const priceIdNum = Number(price_id)
-
-    if (!priceIdNum || !price || !price_date || !Number.isFinite(Number(price)) || Number(price) <= 0) {
+    if (!instrument_code || !price_date || !price || !Number.isFinite(Number(price)) || Number(price) <= 0) {
       return NextResponse.json({ error: "Missing or invalid required fields" }, { status: 400 })
     }
 
@@ -108,10 +101,10 @@ export async function PUT(request: NextRequest) {
       `
       UPDATE instrument_prices
       SET price = $1, price_date = $2, as_of = CURRENT_TIMESTAMP
-      WHERE id = $3
+      WHERE instrument_code = $3 AND price_date = $4
       RETURNING *
     `,
-      [price, price_date, priceIdNum],
+      [price, price_date, instrument_code, price_date],
     )
 
     if (result.length === 0) {
@@ -129,21 +122,19 @@ export async function PUT(request: NextRequest) {
 export async function DELETE(request: NextRequest) {
   try {
     const body = await request.json()
-    const { price_id } = body
+    const { instrument_code, price_date } = body
 
-    const priceIdNum = Number(price_id)
-
-    if (!priceIdNum) {
+    if (!instrument_code || !price_date) {
       return NextResponse.json({ error: "Missing required fields" }, { status: 400 })
     }
 
     const result = await query<InstrumentPrice>(
       `
       DELETE FROM instrument_prices
-      WHERE id = $1
-      RETURNING id
+      WHERE instrument_code = $1 AND price_date = $2
+      RETURNING instrument_code
     `,
-      [priceIdNum],
+      [instrument_code, price_date],
     )
 
     if (result.length === 0) {
@@ -156,4 +147,3 @@ export async function DELETE(request: NextRequest) {
     return NextResponse.json({ error: "Failed to delete price" }, { status: 500 })
   }
 }
-

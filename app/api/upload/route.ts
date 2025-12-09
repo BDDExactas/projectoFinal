@@ -9,14 +9,14 @@ export async function POST(request: NextRequest) {
   try {
     const formData = await request.formData()
     const file = formData.get("file") as File
-    const userId = formData.get("userId") as string
+    const userEmail = formData.get("userEmail") as string
 
     if (!file) {
       return NextResponse.json({ error: "No file provided" }, { status: 400 })
     }
 
-    if (!userId) {
-      return NextResponse.json({ error: "User ID required" }, { status: 400 })
+    if (!userEmail) {
+      return NextResponse.json({ error: "User email required" }, { status: 400 })
     }
 
     // Validate file type
@@ -45,9 +45,9 @@ export async function POST(request: NextRequest) {
 
     // Idempotency: if same hash already uploaded by this user, reuse the record
     const existing = await sql`
-      SELECT id, filename, upload_date, status, rows_processed, errors_count, error_details
+      SELECT user_email, filename, upload_date, status, rows_processed, errors_count, error_details
       FROM imported_files
-      WHERE user_id = ${userId} AND file_path = ${storedPath}
+      WHERE user_email = ${userEmail} AND file_path = ${storedPath}
       LIMIT 1
     `
 
@@ -56,7 +56,7 @@ export async function POST(request: NextRequest) {
         success: true,
         duplicate: true,
         file: existing[0],
-        filePath: relativePath,
+        filePath: storedPath,
         buffer: buffer.toString("base64"),
       })
     }
@@ -66,9 +66,9 @@ export async function POST(request: NextRequest) {
 
     // Create file record in database
     const result = await sql`
-      INSERT INTO imported_files (user_id, filename, status, file_path)
-      VALUES (${userId}, ${file.name}, 'pending', ${storedPath})
-      RETURNING id, filename, upload_date, status, file_path
+      INSERT INTO imported_files (user_email, filename, status, file_path)
+      VALUES (${userEmail}, ${file.name}, 'pending', ${storedPath})
+      RETURNING user_email, filename, upload_date, status, file_path
     `
 
     const fileRecord = result[0]

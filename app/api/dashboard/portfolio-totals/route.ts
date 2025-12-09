@@ -5,15 +5,15 @@ import type { PortfolioTotal } from "@/lib/db-types"
 export async function GET(request: NextRequest) {
   try {
     const searchParams = request.nextUrl.searchParams
-    const userId = searchParams.get("userId")
+    const userEmail = searchParams.get("userEmail")
 
-    if (!userId) {
-      return NextResponse.json({ error: "User ID required" }, { status: 400 })
+    if (!userEmail) {
+      return NextResponse.json({ error: "User email required" }, { status: 400 })
     }
 
     const portfolios = await sql<PortfolioTotal[]>`
       SELECT * FROM v_portfolio_totals
-      WHERE user_id = ${userId}
+      WHERE user_email = ${userEmail}
       ORDER BY total_value_base DESC NULLS LAST, total_value DESC
     `
 

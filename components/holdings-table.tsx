@@ -20,7 +20,7 @@ import { useToast } from "@/hooks/use-toast"
 import type { AccountValuation } from "@/lib/db-types"
 import type { Instrument } from "@/lib/db-types"
 
-export function HoldingsTable({ userId }: { userId: number }) {
+export function HoldingsTable({ userEmail }: { userEmail: string }) {
   const [holdings, setHoldings] = useState<AccountValuation[]>([])
   const [loading, setLoading] = useState(true)
   const { toast } = useToast()
@@ -28,7 +28,7 @@ export function HoldingsTable({ userId }: { userId: number }) {
 
   // Add-asset (global) state
   const [instruments, setInstruments] = useState<Instrument[]>([])
-  const [portfolios, setPortfolios] = useState<Array<{ account_id: number; account_name: string }>>([])
+  const [portfolios, setPortfolios] = useState<Array<{ account_name: string }>>([])
   const [addOpen, setAddOpen] = useState(false)
   const [selInstrument, setSelInstrument] = useState("")
   const [selAccount, setSelAccount] = useState<string>("")
@@ -46,7 +46,7 @@ export function HoldingsTable({ userId }: { userId: number }) {
   useEffect(() => {
     async function fetchData() {
       try {
-        const response = await fetch(`/api/dashboard/valuations?userId=${userId}`)
+        const response = await fetch(`/api/dashboard/valuations?userEmail=${encodeURIComponent(userEmail)}`)
         const data = await response.json()
         setHoldings(data.valuations || [])
       } catch (error) {
@@ -68,10 +68,10 @@ export function HoldingsTable({ userId }: { userId: number }) {
       }
 
       try {
-        const resp2 = await fetch(`/api/dashboard/portfolio-totals?userId=${userId}`)
+        const resp2 = await fetch(`/api/dashboard/portfolio-totals?userEmail=${encodeURIComponent(userEmail)}`)
         const d2 = await resp2.json()
         setPortfolios(d2.portfolios || [])
-        if (d2.portfolios?.length) setSelAccount(String(d2.portfolios[0].account_id))
+        if (d2.portfolios?.length) setSelAccount(String(d2.portfolios[0].account_name))
       } catch (err) {
         console.error("[v0] Failed to fetch portfolios:", err)
       }
@@ -82,12 +82,12 @@ export function HoldingsTable({ userId }: { userId: number }) {
     }, VALUATIONS_POLL_MS)
 
     return () => clearInterval(interval)
-  }, [userId])
+  }, [userEmail])
 
   async function refresh() {
     setLoading(true)
     try {
-      const response = await fetch(`/api/dashboard/valuations?userId=${userId}`)
+      const response = await fetch(`/api/dashboard/valuations?userEmail=${encodeURIComponent(userEmail)}`)
       const data = await response.json()
       setHoldings(data.valuations || [])
     } catch (error) {
@@ -106,8 +106,8 @@ export function HoldingsTable({ userId }: { userId: number }) {
     }
 
     const payload = {
-      userId,
-      accountId: activeHolding.account_id,
+      userEmail,
+      accountName: activeHolding.account_name,
       instrumentCode: activeHolding.instrument_code,
       type: dialogAction === "add" ? "buy" : "sell",
       quantity: qty,
@@ -145,9 +145,9 @@ export function HoldingsTable({ userId }: { userId: number }) {
         method: "DELETE",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          userId,
-          accountId: holding.account_id,
-          instrumentId: holding.instrument_id,
+          userEmail,
+          accountName: holding.account_name,
+          instrumentCode: holding.instrument_code,
         }),
       })
       const data = await res.json()
@@ -199,7 +199,7 @@ export function HoldingsTable({ userId }: { userId: number }) {
                       </SelectTrigger>
                       <SelectContent>
                         {portfolios.map((p) => (
-                          <SelectItem key={p.account_id} value={String(p.account_id)}>
+                          <SelectItem key={p.account_name} value={String(p.account_name)}>
                             {p.account_name}
                           </SelectItem>
                         ))}
@@ -215,7 +215,7 @@ export function HoldingsTable({ userId }: { userId: number }) {
                       </SelectTrigger>
                       <SelectContent>
                         {instruments.map((inst) => (
-                          <SelectItem key={inst.id} value={String(inst.id)}>
+                          <SelectItem key={inst.code} value={inst.code}>
                             {inst.code} - {inst.name}
                           </SelectItem>
                         ))}
@@ -244,7 +244,7 @@ export function HoldingsTable({ userId }: { userId: number }) {
                           toast({ title: "Datos inválidos", description: "Seleccioná cuenta, instrumento y cantidad válida", variant: "destructive" })
                           return
                         }
-                        const inst = instruments.find((i) => String(i.id) === selInstrument)
+                        const inst = instruments.find((i) => i.code === selInstrument)
                         if (!inst) {
                           toast({ title: "Instrumento inválido", variant: "destructive" })
                           return
@@ -255,15 +255,15 @@ export function HoldingsTable({ userId }: { userId: number }) {
                             method: "POST",
                             headers: { "Content-Type": "application/json" },
                             body: JSON.stringify({
-                              userId,
-                              accountId: Number(selAccount),
+                              userEmail,
+                              accountName: selAccount,
                               instrumentCode: inst.code,
                               type: "buy",
                               quantity: qty,
                               price: addPrice ? Number(addPrice) : undefined,
                               date: new Date().toISOString().slice(0, 10),
                               description: "Compra: agregar desde Tenencias",
-                              currency: inst.currency_code ?? "ARS",
+                              currency: inst.instrument_type_code === "cash" ? inst.code : "ARS",
                             }),
                           })
                           const data = await res.json()

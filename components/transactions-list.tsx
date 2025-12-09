@@ -7,14 +7,14 @@ import { ArrowUpRight, Plus, Minus } from "lucide-react"
 import type { TransactionHistory } from "@/lib/db-types"
 import { format } from "date-fns"
 
-export function TransactionsList({ userId }: { userId: number }) {
+export function TransactionsList({ userEmail }: { userEmail: string }) {
   const [transactions, setTransactions] = useState<TransactionHistory[]>([])
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
     async function fetchData() {
       try {
-        const response = await fetch(`/api/dashboard/transactions?userId=${userId}&limit=20`)
+        const response = await fetch(`/api/dashboard/transactions?userEmail=${encodeURIComponent(userEmail)}&limit=20`)
         const data = await response.json()
         setTransactions(data.transactions || [])
       } catch (error) {
@@ -24,7 +24,7 @@ export function TransactionsList({ userId }: { userId: number }) {
       }
     }
     fetchData()
-  }, [userId])
+  }, [userEmail])
 
   const getTransactionIcon = (type: string) => {
     switch (type.toLowerCase()) {
