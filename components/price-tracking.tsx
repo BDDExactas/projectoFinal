@@ -42,6 +42,10 @@ export function PriceTracking() {
   const [syncLoading, setSyncLoading] = useState(false)
   const [syncResult, setSyncResult] = useState<{ updated: number; errors: string[] } | null>(null)
  
+  // Inline edit state
+  const [editingId, setEditingId] = useState<number | null>(null)
+  const [editPrice, setEditPrice] = useState("")
+  const [editDate, setEditDate] = useState("")
 
   // Form state
   const [selectedInstrument, setSelectedInstrument] = useState("")
@@ -184,6 +188,69 @@ export function PriceTracking() {
       }
     }
     return null
+  }
+
+  async function handleUpdatePrice(id: number) {
+    const priceNum = Number(editPrice.replace(',', '.'))
+    if (!Number.isFinite(priceNum) || priceNum <= 0) {
+      toast({ title: "Precio inválido", description: "Ingresa un precio numérico mayor que 0", variant: "destructive" })
+      return
+    }
+
+    try {
+      const res = await fetch("/api/prices", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          price_id: id,
+          price: priceNum,
+          price_date: editDate,
+        }),
+      })
+
+      if (!res.ok) {
+        const data = await res.json()
+        throw new Error(data.error || "Error al actualizar")
+      }
+
+      setEditingId(null)
+      await fetchPrices()
+      toast({ title: "Exito", description: "Precio actualizado" })
+    } catch (error) {
+      console.error("[v0] Update price error:", error)
+      toast({
+        title: "Error",
+        description: error instanceof Error ? error.message : "Error al actualizar",
+        variant: "destructive",
+      })
+    }
+  }
+
+  async function handleDeletePrice(id: number) {
+    if (!confirm("Estás seguro de que quieres eliminar este precio?")) return
+
+    try {
+      const res = await fetch("/api/prices", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ price_id: id }),
+      })
+
+      if (!res.ok) {
+        const data = await res.json()
+        throw new Error(data.error || "Error al eliminar")
+      }
+
+      await fetchPrices()
+      toast({ title: "Exito", description: "Precio eliminado" })
+    } catch (error) {
+      console.error("[v0] Delete price error:", error)
+      toast({
+        title: "Error",
+        description: error instanceof Error ? error.message : "Error al eliminar",
+        variant: "destructive",
+      })
+    }
   }
 
   if (loading) {
@@ -333,18 +400,20 @@ export function PriceTracking() {
               <TableHead>Fecha</TableHead>
               <TableHead className="text-right">Precio</TableHead>
               <TableHead className="text-right">Cambio</TableHead>
+              <TableHead className="text-right">Acciones</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {prices.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={5} className="text-center text-muted-foreground">
+                <TableCell colSpan={6} className="text-center text-muted-foreground">
                   No hay precios registrados
                 </TableCell>
               </TableRow>
             ) : (
               prices.map((price, index) => {
                 const priceChange = getPriceChange(Number(price.price), index)
+                const isEditing = editingId === price.id
                 return (
                   <TableRow key={`${price.id}-${price.price_date}`}>
                     <TableCell className="font-medium">{price.instrument_code}</TableCell>
@@ -352,25 +421,94 @@ export function PriceTracking() {
                       <Badge variant="outline">{price.instrument_type}</Badge>
                     </TableCell>
                     <TableCell className="text-muted-foreground">
-                      {new Date(price.price_date).toLocaleDateString("es-AR")}
+                      {isEditing ? (
+                        <Input
+                          type="date"
+                          value={editDate}
+                          onChange={(e) => setEditDate(e.target.value)}
+                          className="h-8 w-32"
+                        />
+                      ) : (
+                        new Date(price.price_date).toLocaleDateString("es-AR")
+                      )}
                     </TableCell>
                     <TableCell className="text-right font-medium">
-                      {price.currency_code} ${Number(price.price).toLocaleString("es-AR", { minimumFractionDigits: 2 })}
+                      {isEditing ? (
+                        <Input
+                          type="number"
+                          step="0.01"
+                          value={editPrice}
+                          onChange={(e) => setEditPrice(e.target.value)}
+                          className="h-8 w-24 text-right"
+                          placeholder="0.00"
+                        />
+                      ) : (
+                        `${price.currency_code} ${Number(price.price).toLocaleString("es-AR", { minimumFractionDigits: 2 })}`
+                      )}
                     </TableCell>
                     <TableCell className="text-right">
-                      {priceChange ? (
-                        <div
-                          className={`flex items-center justify-end gap-1 ${priceChange.isPositive ? "text-green-600" : "text-red-600"}`}
-                        >
-                          {priceChange.isPositive ? (
-                            <TrendingUp className="h-4 w-4" />
-                          ) : (
-                            <TrendingDown className="h-4 w-4" />
-                          )}
-                          <span className="font-medium">{Math.abs(priceChange.change).toFixed(2)}%</span>
-                        </div>
+                      {!isEditing ? (
+                        priceChange ? (
+                          <div
+                            className={`flex items-center justify-end gap-1 ${priceChange.isPositive ? "text-green-600" : "text-red-600"}`}
+                          >
+                            {priceChange.isPositive ? (
+                              <TrendingUp className="h-4 w-4" />
+                            ) : (
+                              <TrendingDown className="h-4 w-4" />
+                            )}
+                            <span className="font-medium">{Math.abs(priceChange.change).toFixed(2)}%</span>
+                          </div>
+                        ) : (
+                          <span className="text-muted-foreground">-</span>
+                        )
                       ) : (
                         <span className="text-muted-foreground">-</span>
+                      )}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      {isEditing ? (
+                        <div className="flex items-center justify-end gap-1">
+                          <Button
+                            size="sm"
+                            variant="default"
+                            onClick={() => handleUpdatePrice(price.id)}
+                            className="h-7 px-2 text-xs"
+                          >
+                            Guardar
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => setEditingId(null)}
+                            className="h-7 px-2 text-xs"
+                          >
+                            Cancelar
+                          </Button>
+                        </div>
+                      ) : (
+                        <div className="flex items-center justify-end gap-1">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => {
+                              setEditingId(price.id)
+                              setEditPrice(Number(price.price).toString())
+                              setEditDate(price.price_date)
+                            }}
+                            className="h-7 px-2 text-xs"
+                          >
+                            Editar
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="destructive"
+                            onClick={() => handleDeletePrice(price.id)}
+                            className="h-7 px-2 text-xs"
+                          >
+                            Borrar
+                          </Button>
+                        </div>
                       )}
                     </TableCell>
                   </TableRow>

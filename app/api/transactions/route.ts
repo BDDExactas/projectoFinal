@@ -68,3 +68,30 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Failed to create transaction" }, { status: 500 })
   }
 }
+
+// DELETE - Remove a holding (account_instrument)
+export async function DELETE(request: NextRequest) {
+  try {
+    const body = await request.json()
+    const { userId, accountId, instrumentId } = body
+
+    if (!userId || !accountId || !instrumentId) {
+      return NextResponse.json({ error: "Missing required parameters" }, { status: 400 })
+    }
+
+    const result = await sql`
+      DELETE FROM account_instruments
+      WHERE account_id = ${accountId} AND instrument_id = ${instrumentId}
+      RETURNING id
+    `
+
+    if (result.length === 0) {
+      return NextResponse.json({ error: "Holding not found" }, { status: 404 })
+    }
+
+    return NextResponse.json({ success: true })
+  } catch (error) {
+    console.error("[v0] Delete holding error:", error)
+    return NextResponse.json({ error: "Failed to delete holding" }, { status: 500 })
+  }
+}

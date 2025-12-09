@@ -91,3 +91,69 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Failed to save price" }, { status: 500 })
   }
 }
+
+// PUT - Update an existing price
+export async function PUT(request: NextRequest) {
+  try {
+    const body = await request.json()
+    const { price_id, price, price_date } = body
+
+    const priceIdNum = Number(price_id)
+
+    if (!priceIdNum || !price || !price_date || !Number.isFinite(Number(price)) || Number(price) <= 0) {
+      return NextResponse.json({ error: "Missing or invalid required fields" }, { status: 400 })
+    }
+
+    const result = await query<InstrumentPrice>(
+      `
+      UPDATE instrument_prices
+      SET price = $1, price_date = $2, as_of = CURRENT_TIMESTAMP
+      WHERE id = $3
+      RETURNING *
+    `,
+      [price, price_date, priceIdNum],
+    )
+
+    if (result.length === 0) {
+      return NextResponse.json({ error: "Price not found" }, { status: 404 })
+    }
+
+    return NextResponse.json({ success: true, price: result[0] })
+  } catch (error) {
+    console.error("[v0] Error updating price:", error)
+    return NextResponse.json({ error: "Failed to update price" }, { status: 500 })
+  }
+}
+
+// DELETE - Remove a price
+export async function DELETE(request: NextRequest) {
+  try {
+    const body = await request.json()
+    const { price_id } = body
+
+    const priceIdNum = Number(price_id)
+
+    if (!priceIdNum) {
+      return NextResponse.json({ error: "Missing required fields" }, { status: 400 })
+    }
+
+    const result = await query<InstrumentPrice>(
+      `
+      DELETE FROM instrument_prices
+      WHERE id = $1
+      RETURNING id
+    `,
+      [priceIdNum],
+    )
+
+    if (result.length === 0) {
+      return NextResponse.json({ error: "Price not found" }, { status: 404 })
+    }
+
+    return NextResponse.json({ success: true })
+  } catch (error) {
+    console.error("[v0] Error deleting price:", error)
+    return NextResponse.json({ error: "Failed to delete price" }, { status: 500 })
+  }
+}
+

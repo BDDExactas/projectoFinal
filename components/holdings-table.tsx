@@ -137,6 +137,29 @@ export function HoldingsTable({ userId }: { userId: number }) {
     }
   }
 
+  async function deleteHolding(holding: AccountValuation) {
+    if (!confirm(`Estás seguro de que quieres eliminar la tenencia de ${holding.instrument_code}?`)) return
+
+    try {
+      const res = await fetch(`/api/transactions`, {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          userId,
+          accountId: holding.account_id,
+          instrumentId: holding.instrument_id,
+        }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || "Error")
+      toast({ title: "Tenencia eliminada", description: "La tenencia fue completamente removida" })
+      await refresh()
+    } catch (error) {
+      console.error("[v0] Delete holding error:", error)
+      toast({ title: "Error", description: error instanceof Error ? error.message : "Error al eliminar tenencia", variant: "destructive" })
+    }
+  }
+
   if (loading) {
     return (
       <Card>
@@ -280,12 +303,13 @@ export function HoldingsTable({ userId }: { userId: number }) {
               <TableHead className="text-right">Precio promedio</TableHead>
               <TableHead className="text-right">Precio</TableHead>
               <TableHead className="text-right">Valorización</TableHead>
+              <TableHead className="text-right">Acciones</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {holdings.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={6} className="text-center text-muted-foreground">
+                <TableCell colSpan={8} className="text-center text-muted-foreground">
                   No hay tenencias registradas
                 </TableCell>
               </TableRow>
@@ -312,7 +336,7 @@ export function HoldingsTable({ userId }: { userId: number }) {
                     ${Number(holding.valuation).toLocaleString("es-AR", { minimumFractionDigits: 2 })}
                   </TableCell>
                   <TableCell className="text-right">
-                    <div className="flex items-center justify-end gap-2">
+                    <div className="flex items-center justify-end gap-1">
                       <Button
                         size="sm"
                         onClick={() => {
@@ -322,6 +346,7 @@ export function HoldingsTable({ userId }: { userId: number }) {
                           setAdjPrice("")
                           setDialogOpen(true)
                         }}
+                        className="h-7 px-2 text-xs"
                       >
                         Agregar
                       </Button>
@@ -336,8 +361,18 @@ export function HoldingsTable({ userId }: { userId: number }) {
                           setAdjPrice("")
                           setDialogOpen(true)
                         }}
+                        className="h-7 px-2 text-xs"
                       >
                         Quitar
+                      </Button>
+
+                      <Button
+                        size="sm"
+                        variant="destructive"
+                        onClick={() => deleteHolding(holding)}
+                        className="h-7 px-2 text-xs"
+                      >
+                        Eliminar
                       </Button>
                     </div>
                   </TableCell>
