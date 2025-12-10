@@ -1,30 +1,20 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useCallback } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { ArrowUpRight, Plus, Minus } from "lucide-react"
 import type { TransactionHistory } from "@/lib/db-types"
 import { format } from "date-fns"
+import { formatMoney, formatNumber } from "@/lib/format"
+import { useApiQuery } from "@/hooks/use-api"
 
 export function TransactionsList({ userEmail }: { userEmail: string }) {
-  const [transactions, setTransactions] = useState<TransactionHistory[]>([])
-  const [loading, setLoading] = useState(true)
-
-  useEffect(() => {
-    async function fetchData() {
-      try {
-        const response = await fetch(`/api/dashboard/transactions?userEmail=${encodeURIComponent(userEmail)}&limit=20`)
-        const data = await response.json()
-        setTransactions(data.transactions || [])
-      } catch (error) {
-        console.error("[v0] Failed to fetch transactions:", error)
-      } finally {
-        setLoading(false)
-      }
-    }
-    fetchData()
-  }, [userEmail])
+  const selectTransactions = useCallback((json: any) => json.transactions || [], [])
+  const { data: transactions = [], loading } = useApiQuery<TransactionHistory[]>(
+    `/api/dashboard/transactions?userEmail=${encodeURIComponent(userEmail)}&limit=20`,
+    { select: selectTransactions, initialData: [] },
+  )
 
   const getTransactionIcon = (type: string) => {
     switch (type.toLowerCase()) {
@@ -80,11 +70,11 @@ export function TransactionsList({ userEmail }: { userEmail: string }) {
                   <div className="text-right">
                     <div className="font-medium">
                       {tx.transaction_type === "buy" || tx.transaction_type === "deposit" ? "+" : "-"}
-                      {Number(tx.quantity).toLocaleString("es-AR")}
+                      {formatNumber(tx.quantity)}
                     </div>
                     {tx.total_amount && (
                       <div className="text-sm text-muted-foreground">
-                        ${Number(tx.total_amount).toLocaleString("es-AR", { minimumFractionDigits: 2 })}
+                        ${formatMoney(tx.total_amount, tx.currency_code)}
                       </div>
                     )}
                   </div>

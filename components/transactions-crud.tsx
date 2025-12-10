@@ -10,7 +10,9 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { useToast } from "@/hooks/use-toast"
 import type { Instrument } from "@/lib/db-types"
 import { allowedTransactionTypes } from "@/lib/validation/transaction"
+import { todayIsoDate } from "@/lib/dates"
 import { format } from "date-fns"
+import { formatMoney, formatNumber } from "@/lib/format"
 
 type TransactionRow = {
   account_user_email: string
@@ -38,7 +40,7 @@ export function TransactionsCrud({ userEmail }: { userEmail: string }) {
   const [form, setForm] = useState({
     accountName: "",
     instrumentCode: "",
-    date: new Date().toISOString().slice(0, 10),
+    date: todayIsoDate(),
     type: "buy",
     quantity: "",
     price: "",
@@ -89,7 +91,7 @@ export function TransactionsCrud({ userEmail }: { userEmail: string }) {
     setForm({
       accountName: accountOptions[0] || "",
       instrumentCode: instruments[0]?.code || "",
-      date: new Date().toISOString().slice(0, 10),
+      date: todayIsoDate(),
       type: "buy",
       quantity: "",
       price: "",
@@ -333,14 +335,12 @@ export function TransactionsCrud({ userEmail }: { userEmail: string }) {
                     <TableCell>{tx.account_name}</TableCell>
                     <TableCell>{tx.instrument_code}</TableCell>
                     <TableCell className="capitalize">{tx.transaction_type}</TableCell>
-                    <TableCell className="text-right">{Number(tx.quantity).toLocaleString("es-AR")}</TableCell>
+                    <TableCell className="text-right">{formatNumber(tx.quantity)}</TableCell>
                     <TableCell className="text-right">
-                      {tx.price ? Number(tx.price).toLocaleString("es-AR", { minimumFractionDigits: 2 }) : "-"}
+                      {tx.price ? formatMoney(tx.price, tx.currency_code) : "-"}
                     </TableCell>
                     <TableCell className="text-right">
-                      {tx.total_amount
-                        ? Number(tx.total_amount).toLocaleString("es-AR", { minimumFractionDigits: 2 })
-                        : "-"}
+                      {tx.total_amount ? formatMoney(tx.total_amount, tx.currency_code) : "-"}
                     </TableCell>
                     <TableCell className="space-x-2">
                       <Button variant="ghost" size="sm" onClick={() => handleEdit(tx)}>

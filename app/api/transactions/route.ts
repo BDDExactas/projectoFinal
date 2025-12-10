@@ -1,6 +1,7 @@
 import { type NextRequest, NextResponse } from "next/server"
 import { sql } from "@/lib/db"
 import { transactionInputSchema, transactionUpdateSchema, type TransactionInput } from "@/lib/validation/transaction"
+import { upsertInstrumentPrice } from "@/lib/price"
 
 const positiveTypes = ["buy", "deposit", "dividend", "interest"]
 
@@ -20,14 +21,14 @@ const ensureAccount = async (userEmail: string, accountName: string) => {
 const computeQuantityChange = (type: string, quantity: number) =>
   positiveTypes.includes(type.toLowerCase()) ? quantity : -quantity
 
-const upsertInstrumentPrice = async (input: TransactionInput) => {
+const ensureInstrumentPrice = async (input: TransactionInput) => {
   if (input.price !== undefined && Number.isFinite(input.price) && input.price > 0) {
-    await sql`
-      INSERT INTO instrument_prices (instrument_code, price_date, price, currency_code, as_of)
-      VALUES (${input.instrumentCode}, ${input.date}, ${input.price}, ${input.currency || "ARS"}, CURRENT_TIMESTAMP)
-      ON CONFLICT (instrument_code, price_date)
-      DO UPDATE SET price = EXCLUDED.price, currency_code = EXCLUDED.currency_code, as_of = CURRENT_TIMESTAMP, created_at = CURRENT_TIMESTAMP
-    `
+    await upsertInstrumentPrice({
+      instrumentCode: input.instrumentCode,
+      price: input.price,
+      currencyCode: input.currency || "ARS",
+      priceDate: input.date,
+    })
   }
 }
 
@@ -92,7 +93,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Instrument not found" }, { status: 404 })
     }
 
-    await upsertInstrumentPrice(data)
+    await ensureInstrumentPrice(data)
 
     const totalAmount = data.total ?? (data.price ? data.price * data.quantity : null)
 
@@ -185,7 +186,7 @@ export async function PUT(request: NextRequest) {
       return NextResponse.json({ error: "Instrument not found" }, { status: 404 })
     }
 
-    await upsertInstrumentPrice(data)
+    await ensureInstrumentPrice(data)
 
     const rollbackChange = -computeQuantityChange(current.transaction_type, Number(current.quantity))
     const newChange = computeQuantityChange(data.type, data.quantity)

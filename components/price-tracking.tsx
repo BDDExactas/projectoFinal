@@ -2,7 +2,7 @@
 
 import type React from "react"
 
-import { useEffect, useState } from "react"
+import { useCallback, useEffect, useState } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Button } from "@/components/ui/button"
@@ -22,6 +22,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { TrendingUp, TrendingDown, Plus } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 import type { InstrumentPrice, Instrument } from "@/lib/db-types"
+import { useApiQuery } from "@/hooks/use-api"
+import { formatMoney } from "@/lib/format"
+import { todayIsoDate, toIsoDateString } from "@/lib/dates"
 
 interface PriceWithInstrument extends InstrumentPrice {
   instrument_code: string
@@ -34,9 +37,23 @@ const PRICE_POLL_MS = 120_000
 type PriceKey = { instrument_code: string; price_date: string }
 
 export function PriceTracking() {
-  const [prices, setPrices] = useState<PriceWithInstrument[]>([])
-  const [instruments, setInstruments] = useState<Instrument[]>([])
-  const [loading, setLoading] = useState(true)
+  const selectPrices = useCallback((json: any) => json.prices || [], [])
+  const {
+    data: prices = [],
+    loading: pricesLoading,
+    error: pricesError,
+    refresh: refreshPrices,
+  } = useApiQuery<PriceWithInstrument[]>("/api/prices", {
+    select: selectPrices,
+    initialData: [],
+    pollIntervalMs: PRICE_POLL_MS,
+  })
+
+  const selectInstruments = useCallback((json: any) => json.instruments || [], [])
+  const { data: instruments = [] } = useApiQuery<Instrument[]>("/api/instruments", {
+    select: selectInstruments,
+    initialData: [],
+  })
   const { toast } = useToast()
   const [dialogOpen, setDialogOpen] = useState(false)
   const [lastUpdated, setLastUpdated] = useState<string | null>(null)
@@ -51,51 +68,25 @@ export function PriceTracking() {
   // Form state
   const [selectedInstrument, setSelectedInstrument] = useState("")
   const [priceValue, setPriceValue] = useState("")
-  const [priceDate, setPriceDate] = useState(new Date().toISOString().split("T")[0])
+  const [priceDate, setPriceDate] = useState(todayIsoDate())
   const [currencyCode, setCurrencyCode] = useState("ARS")
   const [submitting, setSubmitting] = useState(false)
 
   useEffect(() => {
-    fetchPrices()
-    fetchInstruments()
-
-    const interval = setInterval(() => {
-      fetchPrices(true)
-    }, PRICE_POLL_MS)
-
-    return () => {
-      clearInterval(interval)
-    }
-  }, [])
-
-  async function fetchPrices(silent = false) {
-    try {
-      if (!silent) setLoading(true)
-      const response = await fetch("/api/prices")
-      const data = await response.json()
-      setPrices(data.prices || [])
+    if (!pricesError && !pricesLoading) {
       setLastUpdated(new Date().toLocaleTimeString("es-AR"))
-    } catch (error) {
-      console.error("[v0] Failed to fetch prices:", error)
+    }
+  }, [pricesLoading, pricesError, prices])
+
+  useEffect(() => {
+    if (pricesError) {
       toast({
         title: "Error",
         description: "No se pudieron cargar los precios",
         variant: "destructive",
       })
-    } finally {
-      if (!silent) setLoading(false)
     }
-  }
-
-  async function fetchInstruments() {
-    try {
-      const response = await fetch("/api/instruments")
-      const data = await response.json()
-      setInstruments(data.instruments || [])
-    } catch (error) {
-      console.error("[v0] Failed to fetch instruments:", error)
-    }
-  }
+  }, [pricesError, toast])
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -134,7 +125,7 @@ export function PriceTracking() {
         })
         setDialogOpen(false)
         resetForm()
-        fetchPrices()
+        await refreshPrices(true)
       } else {
         throw new Error(data.error || "Error al guardar el precio")
       }
@@ -153,7 +144,7 @@ export function PriceTracking() {
   function resetForm() {
     setSelectedInstrument("")
     setPriceValue("")
-    setPriceDate(new Date().toISOString().split("T")[0])
+    setPriceDate(todayIsoDate())
     setCurrencyCode("ARS")
   }
 
@@ -165,7 +156,7 @@ export function PriceTracking() {
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || "No se pudieron actualizar los precios")
       setSyncResult({ updated: data.updated ?? 0, errors: data.errors ?? [] })
-      await fetchPrices(true)
+      await refreshPrices(true)
     } catch (error) {
       console.error("[v0] Sync error:", error)
       toast({
@@ -191,9 +182,6 @@ export function PriceTracking() {
     return null
   }
 
-  const toDateString = (value: string | Date) =>
-    typeof value === "string" ? value.slice(0, 10) : value.toISOString().slice(0, 10)
-
   async function handleUpdatePrice(key: PriceKey) {
     const priceNum = Number(editPrice.replace(',', '.'))
     if (!Number.isFinite(priceNum) || priceNum <= 0) {
@@ -209,6 +197,10 @@ export function PriceTracking() {
           instrument_code: key.instrument_code,
           price_date: editDate || key.price_date,
           price: priceNum,
+          currency_code:
+            prices.find(
+              (p) => p.instrument_code === key.instrument_code && toIsoDateString(p.price_date) === key.price_date,
+            )?.currency_code ?? "ARS",
         }),
       })
 
@@ -218,7 +210,7 @@ export function PriceTracking() {
       }
 
       setEditingKey(null)
-      await fetchPrices()
+      await refreshPrices(true)
       toast({ title: "Exito", description: "Precio actualizado" })
     } catch (error) {
       console.error("[v0] Update price error:", error)
@@ -245,7 +237,7 @@ export function PriceTracking() {
         throw new Error(data.error || "Error al eliminar")
       }
 
-      await fetchPrices()
+      await refreshPrices(true)
       toast({ title: "Exito", description: "Precio eliminado" })
     } catch (error) {
       console.error("[v0] Delete price error:", error)
@@ -257,7 +249,7 @@ export function PriceTracking() {
     }
   }
 
-  if (loading) {
+  if (pricesLoading) {
     return (
       <Card>
         <CardHeader>
@@ -419,7 +411,7 @@ export function PriceTracking() {
                 const priceChange = getPriceChange(Number(price.price), index)
                 const rowKey: PriceKey = {
                   instrument_code: price.instrument_code,
-                  price_date: toDateString(price.price_date),
+                  price_date: toIsoDateString(price.price_date),
                 }
                 const isEditing =
                   editingKey?.instrument_code === rowKey.instrument_code &&
@@ -453,7 +445,7 @@ export function PriceTracking() {
                           placeholder="0.00"
                         />
                       ) : (
-                        `${price.currency_code} ${Number(price.price).toLocaleString("es-AR", { minimumFractionDigits: 2 })}`
+                        `${price.currency_code} ${formatMoney(price.price, price.currency_code)}`
                       )}
                     </TableCell>
                     <TableCell className="text-right">
@@ -508,7 +500,7 @@ export function PriceTracking() {
                             onClick={() => {
                               setEditingKey(rowKey)
                               setEditPrice(Number(price.price).toString())
-                              setEditDate(toDateString(price.price_date))
+                              setEditDate(toIsoDateString(price.price_date))
                             }}
                             className="h-7 px-2 text-xs"
                           >

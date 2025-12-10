@@ -1,36 +1,20 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useCallback } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Bar, BarChart, CartesianGrid, XAxis, YAxis, ResponsiveContainer } from "recharts"
 import { ChartContainer, ChartTooltip, ChartTooltipContent } from "@/components/ui/chart"
 import type { InstrumentPerformance } from "@/lib/db-types"
+import { useApiQuery } from "@/hooks/use-api"
 
 export function PerformanceChart() {
-  const [performance, setPerformance] = useState<InstrumentPerformance[]>([])
-  const [loading, setLoading] = useState(true)
   const PERFORMANCE_POLL_MS = 120_000
-
-  useEffect(() => {
-    async function fetchData() {
-      try {
-        const response = await fetch("/api/dashboard/performance")
-        const data = await response.json()
-        setPerformance(data.performance || [])
-      } catch (error) {
-        console.error("[v0] Failed to fetch performance:", error)
-      } finally {
-        setLoading(false)
-      }
-    }
-    fetchData()
-
-    const interval = setInterval(() => {
-      fetchData()
-    }, PERFORMANCE_POLL_MS)
-
-    return () => clearInterval(interval)
-  }, [])
+  const selectPerformance = useCallback((json: any) => json.performance || [], [])
+  const { data: performance = [], loading } = useApiQuery<InstrumentPerformance[]>("/api/dashboard/performance", {
+    select: selectPerformance,
+    initialData: [],
+    pollIntervalMs: PERFORMANCE_POLL_MS,
+  })
 
   if (loading) {
     return (
