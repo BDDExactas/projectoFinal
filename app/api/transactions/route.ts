@@ -183,7 +183,7 @@ export async function PUT(request: NextRequest) {
     
     // Find exact match by comparing timestamps at millisecond precision
     const targetTime = new Date(data.createdAt).getTime()
-    const existingTx = allMatching.filter(tx => {
+    const existingTx = allMatching.filter((tx: any) => {
       const txTime = new Date(tx.created_at).getTime()
       return txTime === targetTime
     })
@@ -302,7 +302,7 @@ export async function DELETE(request: NextRequest) {
 
       // Find exact match by comparing timestamps at millisecond precision
       const targetTime = new Date(createdAt).getTime()
-      const txRes = allMatching.filter(tx => {
+      const txRes = allMatching.filter((tx: any) => {
         const txTime = new Date(tx.created_at).getTime()
         return txTime === targetTime
       })
