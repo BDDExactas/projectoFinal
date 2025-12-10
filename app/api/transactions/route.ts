@@ -1,6 +1,7 @@
 import { type NextRequest, NextResponse } from "next/server"
 import { sql } from "@/lib/db"
 import { transactionInputSchema, transactionUpdateSchema, type TransactionInput } from "@/lib/validation/transaction"
+import { upsertInstrumentPrice } from "@/lib/price"
 
 const positiveTypes = ["buy", "deposit", "dividend", "interest"]
 
@@ -20,14 +21,14 @@ const ensureAccount = async (userEmail: string, accountName: string) => {
 const computeQuantityChange = (type: string, quantity: number) =>
   positiveTypes.includes(type.toLowerCase()) ? quantity : -quantity
 
-const upsertInstrumentPrice = async (input: TransactionInput) => {
+const ensureInstrumentPrice = async (input: TransactionInput) => {
   if (input.price !== undefined && Number.isFinite(input.price) && input.price > 0) {
-    await sql`
-      INSERT INTO instrument_prices (instrument_code, price_date, price, currency_code, as_of)
-      VALUES (${input.instrumentCode}, ${input.date}, ${input.price}, ${input.currency || "ARS"}, CURRENT_TIMESTAMP)
-      ON CONFLICT (instrument_code, price_date)
-      DO UPDATE SET price = EXCLUDED.price, currency_code = EXCLUDED.currency_code, as_of = CURRENT_TIMESTAMP, created_at = CURRENT_TIMESTAMP
-    `
+    await upsertInstrumentPrice({
+      instrumentCode: input.instrumentCode,
+      price: input.price,
+      currencyCode: input.currency || "ARS",
+      priceDate: input.date,
+    })
   }
 }
 
@@ -92,7 +93,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Instrument not found" }, { status: 404 })
     }
 
-    await upsertInstrumentPrice(data)
+    await ensureInstrumentPrice(data)
 
     const totalAmount = data.total ?? (data.price ? data.price * data.quantity : null)
 
@@ -168,27 +169,17 @@ export async function PUT(request: NextRequest) {
     const searchInstrumentCode = data.originalInstrumentCode || data.instrumentCode
     console.log('[DEBUG] Searching with:', { searchAccountName, searchInstrumentCode, createdAt: data.createdAt })
 
-    // Use date_trunc to compare timestamps at millisecond precision
-    console.log('[DEBUG] About to query with date_trunc')
-    const allMatching = await sql`
+    // Deterministic lookup: match the exact created_at value returned to the client
+    const existingTx = await sql`
       SELECT transaction_type, quantity, account_name, instrument_code, created_at
       FROM transactions
       WHERE user_email = ${data.userEmail}
         AND account_name = ${searchAccountName}
         AND instrument_code = ${searchInstrumentCode}
-      ORDER BY created_at DESC
-      LIMIT 10
+        AND created_at = ${data.createdAt}
+      LIMIT 1
     `
-    console.log('[DEBUG] All matching results:', JSON.stringify(allMatching, null, 2))
-    
-    // Find the exact match by comparing ISO strings at millisecond precision
-    const targetTime = new Date(data.createdAt).getTime()
-    const existingTx = allMatching.filter(tx => {
-      const txTime = new Date(tx.created_at).getTime()
-      // Compare at millisecond level (ignore microseconds)
-      return Math.floor(txTime / 1) === Math.floor(targetTime / 1)
-    })
-    console.log('[DEBUG] Filtered to exact match:', existingTx.length, existingTx)
+    console.log('[DEBUG] Existing tx rows:', JSON.stringify(existingTx, null, 2))
 
     if (existingTx.length === 0) {
       return NextResponse.json({ error: "Transaction not found" }, { status: 404 })
@@ -203,7 +194,7 @@ export async function PUT(request: NextRequest) {
       return NextResponse.json({ error: "Instrument not found" }, { status: 404 })
     }
 
-    await upsertInstrumentPrice(data)
+    await ensureInstrumentPrice(data)
 
     const rollbackChange = -computeQuantityChange(current.transaction_type, Number(current.quantity))
     const newChange = computeQuantityChange(data.type, data.quantity)

@@ -2,6 +2,8 @@ import { NextResponse } from "next/server"
 import { query } from "@/lib/db"
 import { BASE_CURRENCY, buildFxSymbol } from "@/lib/currency"
 import { fetchYahooQuote, fetchYahooFx } from "@/lib/price-providers/yahoo"
+import { upsertInstrumentPrice } from "@/lib/price"
+import { todayIsoDate } from "@/lib/dates"
 
 interface InstrumentRow {
   code: string
@@ -37,6 +39,7 @@ export async function POST() {
         if (instrument.code === BASE_CURRENCY) {
           // Keep base currency anchored at 1
           try {
+            // Use DB's CURRENT_DATE to avoid app/DB timezone drift
             await query(
               `
                 INSERT INTO instrument_prices (instrument_code, price_date, price, currency_code, as_of)
@@ -63,19 +66,13 @@ export async function POST() {
 
         try {
           const quote = await fetchYahooFx(pairSymbol)
-          await query(
-            `
-              INSERT INTO instrument_prices (instrument_code, price_date, price, currency_code, as_of)
-              VALUES ($1, $2, $3, $4, $5)
-              ON CONFLICT (instrument_code, price_date)
-              DO UPDATE SET 
-                price = EXCLUDED.price, 
-                currency_code = EXCLUDED.currency_code, 
-                as_of = EXCLUDED.as_of,
-                created_at = CURRENT_TIMESTAMP
-            `,
-            [instrument.code, quote.price_date, quote.price, BASE_CURRENCY, quote.as_of],
-          )
+          await upsertInstrumentPrice({
+            instrumentCode: instrument.code,
+            price: quote.price,
+            priceDate: quote.price_date,
+            currencyCode: BASE_CURRENCY,
+            asOf: quote.as_of,
+          })
           updated++
         } catch (error) {
           const message =
@@ -95,19 +92,13 @@ export async function POST() {
         const quote = await fetchYahooQuote(symbol)
         const currency = symbol.endsWith(".BA") ? "ARS" : quote.currency || "USD"
 
-        await query(
-          `
-            INSERT INTO instrument_prices (instrument_code, price_date, price, currency_code, as_of)
-            VALUES ($1, $2, $3, $4, $5)
-            ON CONFLICT (instrument_code, price_date)
-            DO UPDATE SET 
-              price = EXCLUDED.price, 
-              currency_code = EXCLUDED.currency_code, 
-              as_of = EXCLUDED.as_of,
-              created_at = CURRENT_TIMESTAMP
-          `,
-          [instrument.code, quote.price_date, quote.price, currency, quote.as_of],
-        )
+        await upsertInstrumentPrice({
+          instrumentCode: instrument.code,
+          price: quote.price,
+          priceDate: quote.price_date,
+          currencyCode: currency,
+          asOf: quote.as_of,
+        })
         updated++
       } catch (error) {
         const message =

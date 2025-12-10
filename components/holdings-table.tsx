@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useCallback, useEffect, useState } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
@@ -19,16 +19,37 @@ import { Label } from "@/components/ui/label"
 import { useToast } from "@/hooks/use-toast"
 import type { AccountValuation } from "@/lib/db-types"
 import type { Instrument } from "@/lib/db-types"
+import { useApiQuery } from "@/hooks/use-api"
+import { formatMoney, formatNumber } from "@/lib/format"
+import { todayIsoDate } from "@/lib/dates"
 
 export function HoldingsTable({ userEmail }: { userEmail: string }) {
-  const [holdings, setHoldings] = useState<AccountValuation[]>([])
-  const [loading, setLoading] = useState(true)
   const { toast } = useToast()
   const VALUATIONS_POLL_MS = 120_000
 
+  const selectHoldings = useCallback((json: any) => json.valuations || [], [])
+  const {
+    data: holdings = [],
+    loading: holdingsLoading,
+    error: holdingsError,
+    refresh: refreshHoldings,
+  } = useApiQuery<AccountValuation[]>(
+    `/api/dashboard/valuations?userEmail=${encodeURIComponent(userEmail)}`,
+    { select: selectHoldings, initialData: [], pollIntervalMs: VALUATIONS_POLL_MS },
+  )
+
   // Add-asset (global) state
-  const [instruments, setInstruments] = useState<Instrument[]>([])
-  const [portfolios, setPortfolios] = useState<Array<{ account_name: string }>>([])
+  const selectInstruments = useCallback((json: any) => json.instruments || [], [])
+  const { data: instruments = [] } = useApiQuery<Instrument[]>(`/api/instruments`, {
+    select: selectInstruments,
+    initialData: [],
+  })
+
+  const selectPortfolios = useCallback((json: any) => json.portfolios || [], [])
+  const { data: portfolios = [] } = useApiQuery<Array<{ account_name: string }>>(
+    `/api/dashboard/portfolio-totals?userEmail=${encodeURIComponent(userEmail)}`,
+    { select: selectPortfolios, initialData: [] },
+  )
   const [addOpen, setAddOpen] = useState(false)
   const [selInstrument, setSelInstrument] = useState("")
   const [selAccount, setSelAccount] = useState<string>("")
@@ -44,58 +65,21 @@ export function HoldingsTable({ userEmail }: { userEmail: string }) {
   const [adjPrice, setAdjPrice] = useState<string>("")
 
   useEffect(() => {
-    async function fetchData() {
-      try {
-        const response = await fetch(`/api/dashboard/valuations?userEmail=${encodeURIComponent(userEmail)}`)
-        const data = await response.json()
-        setHoldings(data.valuations || [])
-      } catch (error) {
-        console.error("[v0] Failed to fetch holdings:", error)
-      } finally {
-        setLoading(false)
-      }
+    if (!selAccount && portfolios.length) {
+      setSelAccount(String(portfolios[0].account_name))
     }
-    fetchData()
+  }, [portfolios, selAccount])
 
-    // fetch instruments and portfolios for add-asset dialog
-    ;(async function fetchAux() {
-      try {
-        const resp = await fetch(`/api/instruments`)
-        const d = await resp.json()
-        setInstruments(d.instruments || [])
-      } catch (err) {
-        console.error("[v0] Failed to fetch instruments:", err)
-      }
-
-      try {
-        const resp2 = await fetch(`/api/dashboard/portfolio-totals?userEmail=${encodeURIComponent(userEmail)}`)
-        const d2 = await resp2.json()
-        setPortfolios(d2.portfolios || [])
-        if (d2.portfolios?.length) setSelAccount(String(d2.portfolios[0].account_name))
-      } catch (err) {
-        console.error("[v0] Failed to fetch portfolios:", err)
-      }
-    })()
-
-    const interval = setInterval(() => {
-      refresh()
-    }, VALUATIONS_POLL_MS)
-
-    return () => clearInterval(interval)
-  }, [userEmail])
-
-  async function refresh() {
-    setLoading(true)
-    try {
-      const response = await fetch(`/api/dashboard/valuations?userEmail=${encodeURIComponent(userEmail)}`)
-      const data = await response.json()
-      setHoldings(data.valuations || [])
-    } catch (error) {
-      console.error("[v0] Failed to fetch holdings:", error)
-    } finally {
-      setLoading(false)
+  useEffect(() => {
+    if (holdingsError) {
+      console.error("[v0] Failed to fetch holdings:", holdingsError)
+      toast({
+        title: "Error al cargar tenencias",
+        description: "Reintentá en unos segundos",
+        variant: "destructive",
+      })
     }
-  }
+  }, [holdingsError, toast])
 
   async function submitAdjustment() {
     if (!activeHolding) return
@@ -112,7 +96,7 @@ export function HoldingsTable({ userEmail }: { userEmail: string }) {
       type: dialogAction === "add" ? "buy" : "sell",
       quantity: qty,
       price: adjPrice ? Number(adjPrice) : undefined,
-      date: new Date().toISOString().slice(0, 10),
+      date: todayIsoDate(),
       description: dialogAction === "add" ? "Ajuste: agregar" : "Ajuste: quitar",
       currency: activeHolding.currency_code,
     }
@@ -130,7 +114,7 @@ export function HoldingsTable({ userEmail }: { userEmail: string }) {
       setAdjQuantity("")
       setActiveHolding(null)
       toast({ title: "Ajuste aplicado", description: "La transacción fue registrada" })
-      await refresh()
+      await refreshHoldings(true)
     } catch (error) {
       console.error("[v0] Adjustment error:", error)
       toast({ title: "Error", description: error instanceof Error ? error.message : "Error al aplicar ajuste", variant: "destructive" })
@@ -153,14 +137,14 @@ export function HoldingsTable({ userEmail }: { userEmail: string }) {
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || "Error")
       toast({ title: "Tenencia eliminada", description: "La tenencia fue completamente removida" })
-      await refresh()
+      await refreshHoldings(true)
     } catch (error) {
       console.error("[v0] Delete holding error:", error)
       toast({ title: "Error", description: error instanceof Error ? error.message : "Error al eliminar tenencia", variant: "destructive" })
     }
   }
 
-  if (loading) {
+  if (holdingsLoading) {
     return (
       <Card>
         <CardHeader>
@@ -261,7 +245,7 @@ export function HoldingsTable({ userEmail }: { userEmail: string }) {
                               type: "buy",
                               quantity: qty,
                               price: addPrice ? Number(addPrice) : undefined,
-                              date: new Date().toISOString().slice(0, 10),
+                              date: todayIsoDate(),
                               description: "Compra: agregar desde Tenencias",
                               currency: inst.instrument_type_code === "cash" ? inst.code : "ARS",
                             }),
@@ -273,7 +257,7 @@ export function HoldingsTable({ userEmail }: { userEmail: string }) {
                           setAddQty("")
                           setAddPrice("")
                           toast({ title: "Activo agregado", description: "La tenencia fue creada/actualizada" })
-                          await refresh()
+                          await refreshHoldings(true)
                         } catch (err) {
                           console.error("[v0] Add asset error:", err)
                           toast({ title: "Error", description: err instanceof Error ? err.message : "Error al agregar activo", variant: "destructive" })
@@ -321,20 +305,16 @@ export function HoldingsTable({ userEmail }: { userEmail: string }) {
                     <Badge variant="outline">{holding.instrument_type}</Badge>
                   </TableCell>
                   <TableCell className="text-muted-foreground">{holding.account_name}</TableCell>
-                  <TableCell className="text-right">{Number(holding.quantity).toLocaleString("es-AR")}</TableCell>
+                  <TableCell className="text-right">{formatNumber(holding.quantity)}</TableCell>
                   <TableCell className="text-right">
                     {holding.average_price != null ? (
-                      <>${Number(holding.average_price).toLocaleString("es-AR", { minimumFractionDigits: 2 })}</>
+                      <>${formatMoney(holding.average_price)}</>
                     ) : (
                       <span className="text-muted-foreground">-</span>
                     )}
                   </TableCell>
-                  <TableCell className="text-right">
-                    ${Number(holding.current_price).toLocaleString("es-AR", { minimumFractionDigits: 2 })}
-                  </TableCell>
-                  <TableCell className="text-right font-medium text-primary">
-                    ${Number(holding.valuation).toLocaleString("es-AR", { minimumFractionDigits: 2 })}
-                  </TableCell>
+                  <TableCell className="text-right">${formatMoney(holding.current_price, undefined, undefined, 2, 2)}</TableCell>
+                  <TableCell className="text-right font-medium text-primary">${formatMoney(holding.valuation, undefined, undefined, 2, 2)}</TableCell>
                   <TableCell className="text-right">
                     <div className="flex items-center justify-end gap-1">
                       <Button

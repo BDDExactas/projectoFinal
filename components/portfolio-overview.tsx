@@ -1,28 +1,18 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useCallback } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Wallet } from "lucide-react"
 import type { PortfolioTotal } from "@/lib/db-types"
+import { formatMoney } from "@/lib/format"
+import { useApiQuery } from "@/hooks/use-api"
 
 export function PortfolioOverview({ userEmail }: { userEmail: string }) {
-  const [portfolios, setPortfolios] = useState<PortfolioTotal[]>([])
-  const [loading, setLoading] = useState(true)
-
-  useEffect(() => {
-    async function fetchData() {
-      try {
-        const response = await fetch(`/api/dashboard/portfolio-totals?userEmail=${encodeURIComponent(userEmail)}`)
-        const data = await response.json()
-        setPortfolios(data.portfolios || [])
-      } catch (error) {
-        console.error("[v0] Failed to fetch portfolios:", error)
-      } finally {
-        setLoading(false)
-      }
-    }
-    fetchData()
-  }, [userEmail])
+  const selectPortfolios = useCallback((json: any) => json.portfolios || [], [])
+  const { data: portfolios = [], loading } = useApiQuery<PortfolioTotal[]>(
+    `/api/dashboard/portfolio-totals?userEmail=${encodeURIComponent(userEmail)}`,
+    { select: selectPortfolios, initialData: [] },
+  )
 
   const baseCurrency = portfolios[0]?.base_currency_code || "ARS"
   const totalValueBase = portfolios.reduce((sum, p) => sum + Number(p.total_value_base ?? p.total_value), 0)
@@ -51,7 +41,7 @@ export function PortfolioOverview({ userEmail }: { userEmail: string }) {
         </CardHeader>
         <CardContent>
           <div className="text-4xl font-bold text-primary">
-            {baseCurrency} ${totalValueBase.toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            {baseCurrency} ${formatMoney(totalValueBase, baseCurrency)}
           </div>
           <p className="text-sm text-muted-foreground mt-2">
             {portfolios.length} cuenta{portfolios.length !== 1 ? "s" : ""} activa{portfolios.length !== 1 ? "s" : ""}
@@ -67,7 +57,7 @@ export function PortfolioOverview({ userEmail }: { userEmail: string }) {
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold">
-                {baseCurrency} ${Number(portfolio.total_value_base ?? portfolio.total_value).toLocaleString("es-AR", { minimumFractionDigits: 2 })}
+                {baseCurrency} ${formatMoney(Number(portfolio.total_value_base ?? portfolio.total_value), baseCurrency)}
               </div>
               <div className="flex items-center gap-2 mt-2 text-sm text-muted-foreground">
                 <span>{portfolio.instruments_count} instrumentos</span>

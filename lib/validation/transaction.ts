@@ -1,12 +1,7 @@
 import { z } from "zod"
+import { normalizeDate, todayIsoDate } from "@/lib/dates"
 
 export const allowedTransactionTypes = ["buy", "sell", "deposit", "withdrawal", "dividend", "interest"] as const
-
-const normalizeDate = (value: unknown) => {
-  if (value instanceof Date) return value.toISOString().slice(0, 10)
-  if (typeof value === "string") return value.trim()
-  return ""
-}
 
 const toNumber = (val: unknown) => {
   if (val === "" || val === null || val === undefined) return undefined
@@ -37,7 +32,7 @@ export const transactionInputSchema = z.object({
   date: z
     .preprocess(normalizeDate, z.string())
     .pipe(z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "date debe estar en formato YYYY-MM-DD"))
-    .default(() => new Date().toISOString().slice(0, 10)),
+    .default(() => todayIsoDate()),
   currency: z.string().trim().min(1, "currency es requerido").default("ARS"),
   description: z.preprocess((val) => (val === undefined ? undefined : String(val)), z.string().optional()),
 })

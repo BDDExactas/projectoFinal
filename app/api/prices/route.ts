@@ -1,6 +1,8 @@
 import { type NextRequest, NextResponse } from "next/server"
 import { query } from "@/lib/db"
 import type { InstrumentPrice } from "@/lib/db-types"
+import { upsertInstrumentPrice } from "@/lib/price"
+import { normalizeDate } from "@/lib/dates"
 
 // Keep a small recent history per instrument for UI change calculations without flooding the table
 const RECENT_PRICES_PER_INSTRUMENT = 5
@@ -9,6 +11,59 @@ interface PriceWithInstrument extends InstrumentPrice {
   instrument_code: string
   instrument_name: string
   instrument_type: string
+}
+
+const parsePricePayload = (body: any, requireCurrency = true) => {
+  const instrument_code = typeof body?.instrument_code === "string" ? body.instrument_code.trim() : ""
+  const currency_code = typeof body?.currency_code === "string" ? body.currency_code.trim() : ""
+  const price_date = normalizeDate(body?.price_date)
+  const price = Number(body?.price)
+
+  if (!instrument_code || !price_date || (requireCurrency && !currency_code)) {
+    return { ok: false, message: "Missing required fields" } as const
+  }
+
+  if (!Number.isFinite(price) || price <= 0) {
+    return { ok: false, message: "price must be a positive number" } as const
+  }
+
+  return { ok: true, data: { instrument_code, currency_code, price_date, price } } as const
+}
+
+const parsePriceKeyPayload = (body: any) => {
+  const instrument_code = typeof body?.instrument_code === "string" ? body.instrument_code : undefined
+  const price_date = body?.price_date
+
+  if (!instrument_code || !price_date) {
+    return { ok: false, message: "Missing required fields" } as const
+  }
+
+  return { ok: true, data: { instrument_code, price_date } } as const
+}
+
+type PricePayload = ReturnType<typeof parsePricePayload>["data"]
+
+interface PriceHandlerOptions {
+  requireCurrency: boolean
+  onSuccess: (data: PricePayload) => Promise<NextResponse>
+  errorLabel: string
+  errorMessage: string
+}
+
+const handlePriceRequest = async (request: NextRequest, options: PriceHandlerOptions) => {
+  const { requireCurrency, onSuccess, errorLabel, errorMessage } = options
+  try {
+    const body = await request.json()
+    const parsed = parsePricePayload(body, requireCurrency)
+    if (!parsed.ok) {
+      return NextResponse.json({ error: parsed.message }, { status: 400 })
+    }
+
+    return await onSuccess(parsed.data)
+  } catch (error) {
+    console.error(errorLabel, error)
+    return NextResponse.json({ error: errorMessage }, { status: 500 })
+  }
 }
 
 // GET - Fetch all prices with instrument details
@@ -49,84 +104,60 @@ export async function GET() {
 
 // POST - Add or update a price
 export async function POST(request: NextRequest) {
-  try {
-    const body = await request.json()
-    const { instrument_code, price, price_date, currency_code } = body
+  return handlePriceRequest(request, {
+    requireCurrency: true,
+    errorLabel: "[v0] Error saving price:",
+    errorMessage: "Failed to save price",
+    onSuccess: async ({ instrument_code, price, price_date, currency_code }) => {
+      const result = await upsertInstrumentPrice({
+        instrumentCode: instrument_code,
+        price,
+        priceDate: price_date,
+        currencyCode: currency_code,
+        returning: true,
+      })
 
-    // Validate required fields
-    if (
-      !price_date ||
-      !currency_code ||
-      !instrument_code ||
-      !Number.isFinite(Number(price)) ||
-      Number(price) <= 0
-    ) {
-      return NextResponse.json({ error: "Missing or invalid required fields" }, { status: 400 })
-    }
-
-    // Insert or update price (upsert)
-    const result = await query<InstrumentPrice>(
-      `
-      INSERT INTO instrument_prices (instrument_code, price_date, price, currency_code, as_of)
-      VALUES ($1, $2, $3, $4, CURRENT_TIMESTAMP)
-      ON CONFLICT (instrument_code, price_date)
-      DO UPDATE SET 
-        price = EXCLUDED.price,
-        currency_code = EXCLUDED.currency_code,
-        as_of = CURRENT_TIMESTAMP,
-        created_at = CURRENT_TIMESTAMP
-      RETURNING *
-    `,
-      [instrument_code, price_date, price, currency_code],
-    )
-
-    return NextResponse.json({ success: true, price: result[0] })
-  } catch (error) {
-    console.error("[v0] Error saving price:", error)
-    return NextResponse.json({ error: "Failed to save price" }, { status: 500 })
-  }
+      return NextResponse.json({ success: true, price: (result as InstrumentPrice[])[0] })
+    },
+  })
 }
 
 // PUT - Update an existing price
 export async function PUT(request: NextRequest) {
-  try {
-    const body = await request.json()
-    const { instrument_code, price_date, price } = body
+  return handlePriceRequest(request, {
+    requireCurrency: false,
+    errorLabel: "[v0] Error updating price:",
+    errorMessage: "Failed to update price",
+    onSuccess: async ({ instrument_code, price_date, price }) => {
+      const result = await query<InstrumentPrice>(
+        `
+        UPDATE instrument_prices
+        SET price = $1, price_date = $2, as_of = CURRENT_TIMESTAMP
+        WHERE instrument_code = $3 AND price_date = $4
+        RETURNING *
+      `,
+        [price, price_date, instrument_code, price_date],
+      )
 
-    if (!instrument_code || !price_date || !price || !Number.isFinite(Number(price)) || Number(price) <= 0) {
-      return NextResponse.json({ error: "Missing or invalid required fields" }, { status: 400 })
-    }
+      if (result.length === 0) {
+        return NextResponse.json({ error: "Price not found" }, { status: 404 })
+      }
 
-    const result = await query<InstrumentPrice>(
-      `
-      UPDATE instrument_prices
-      SET price = $1, price_date = $2, as_of = CURRENT_TIMESTAMP
-      WHERE instrument_code = $3 AND price_date = $4
-      RETURNING *
-    `,
-      [price, price_date, instrument_code, price_date],
-    )
-
-    if (result.length === 0) {
-      return NextResponse.json({ error: "Price not found" }, { status: 404 })
-    }
-
-    return NextResponse.json({ success: true, price: result[0] })
-  } catch (error) {
-    console.error("[v0] Error updating price:", error)
-    return NextResponse.json({ error: "Failed to update price" }, { status: 500 })
-  }
+      return NextResponse.json({ success: true, price: result[0] })
+    },
+  })
 }
 
 // DELETE - Remove a price
 export async function DELETE(request: NextRequest) {
   try {
     const body = await request.json()
-    const { instrument_code, price_date } = body
-
-    if (!instrument_code || !price_date) {
-      return NextResponse.json({ error: "Missing required fields" }, { status: 400 })
+    const parsed = parsePriceKeyPayload(body)
+    if (!parsed.ok) {
+      return NextResponse.json({ error: parsed.message }, { status: 400 })
     }
+
+    const { instrument_code, price_date } = parsed.data
 
     const result = await query<InstrumentPrice>(
       `
