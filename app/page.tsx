@@ -7,6 +7,7 @@ import { TransactionsList } from "@/components/transactions-list"
 import { TransactionsCrud } from "@/components/transactions-crud"
 import { PriceTracking } from "@/components/price-tracking"
 import { InstrumentsCrud } from "@/components/instruments-crud"
+import { InstrumentTypesCrud } from "@/components/instrument-types-crud"
 import { DatabaseInitializer } from "@/components/database-initializer"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Button } from "@/components/ui/button"
@@ -70,11 +71,12 @@ export default function DashboardPage() {
         </div>
 
         <Tabs defaultValue="dashboard" className="space-y-6">
-          <TabsList className="grid w-full max-w-4xl grid-cols-5">
+          <TabsList className="grid w-full max-w-6xl grid-cols-6">
             <TabsTrigger value="dashboard">Dashboard</TabsTrigger>
             <TabsTrigger value="holdings">Tenencias</TabsTrigger>
             <TabsTrigger value="prices">Precios</TabsTrigger>
             <TabsTrigger value="instruments">Instrumentos</TabsTrigger>
+            <TabsTrigger value="instrument-types">Tipos</TabsTrigger>
             <TabsTrigger value="transactions">Transacciones</TabsTrigger>
           </TabsList>
 
@@ -97,6 +99,10 @@ export default function DashboardPage() {
 
           <TabsContent value="instruments" className="space-y-6">
             <InstrumentsCrud />
+          </TabsContent>
+
+          <TabsContent value="instrument-types" className="space-y-6">
+            <InstrumentTypesCrud />
           </TabsContent>
 
           <TabsContent value="transactions" className="space-y-6">
