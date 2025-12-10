@@ -155,7 +155,7 @@ export async function PUT(request: NextRequest) {
   try {
     const body = await request.json()
     console.log('[DEBUG] PUT body received:', JSON.stringify(body, null, 2))
-    
+
     const validation = transactionUpdateSchema.safeParse(body)
     if (!validation.success) {
       console.log('[DEBUG] Validation failed:', validation.error)
@@ -163,7 +163,7 @@ export async function PUT(request: NextRequest) {
     }
     const data = validation.data
     console.log('[DEBUG] Validated data:', JSON.stringify(data, null, 2))
-    
+
     // Use original values to find the transaction, fallback to new values if not provided
     const searchAccountName = data.originalAccountName || data.accountName
     const searchInstrumentCode = data.originalInstrumentCode || data.instrumentCode
@@ -180,7 +180,7 @@ export async function PUT(request: NextRequest) {
       LIMIT 10
     `
     console.log('[DEBUG] All matching results:', JSON.stringify(allMatching, null, 2))
-    
+
     // Find exact match by comparing timestamps at millisecond precision
     const targetTime = new Date(data.createdAt).getTime()
     const existingTx = allMatching.filter((tx: any) => {
@@ -253,7 +253,11 @@ export async function PUT(request: NextRequest) {
       `
     }
 
-    await sql`
+    const targetCreatedAt = new Date(current.created_at)
+    const lowerBound = new Date(targetCreatedAt.getTime() - 1)
+    const upperBound = new Date(targetCreatedAt.getTime() + 1)
+
+    const updated = await sql`
       UPDATE transactions
       SET transaction_type = ${data.type},
           quantity = ${data.quantity},
@@ -267,8 +271,14 @@ export async function PUT(request: NextRequest) {
       WHERE user_email = ${data.userEmail}
         AND account_name = ${searchAccountName}
         AND instrument_code = ${searchInstrumentCode}
-        AND created_at = ${current.created_at}
+        AND created_at >= ${lowerBound}
+        AND created_at <= ${upperBound}
+      RETURNING created_at
     `
+
+    if (updated.length === 0) {
+      return NextResponse.json({ error: "Transaction not found for update" }, { status: 404 })
+    }
 
     return NextResponse.json({ success: true })
   } catch (error) {
@@ -313,14 +323,23 @@ export async function DELETE(request: NextRequest) {
 
       const transaction = txRes[0]
       const rollbackChange = -computeQuantityChange(transaction.transaction_type, Number(transaction.quantity))
+      const txDate = new Date(transaction.created_at)
+      const lowerBound = new Date(txDate.getTime() - 1)
+      const upperBound = new Date(txDate.getTime() + 1)
 
-      await sql`
+      const deleted = await sql`
         DELETE FROM transactions
         WHERE user_email = ${userEmail}
           AND account_name = ${accountName}
           AND instrument_code = ${instrumentCode}
-          AND created_at = ${transaction.created_at}
+          AND created_at >= ${lowerBound}
+          AND created_at <= ${upperBound}
+        RETURNING created_at
       `
+
+      if (deleted.length === 0) {
+        return NextResponse.json({ error: "Transaction not found for delete" }, { status: 404 })
+      }
 
       const holdingUpdate = await sql`
         UPDATE account_instruments
