@@ -1,6 +1,15 @@
 import { NextResponse, type NextRequest } from "next/server"
+import { z } from "zod"
 import { sql } from "@/lib/db"
 import type { Instrument } from "@/lib/db-types"
+
+const instrumentSchema = z.object({
+  code: z.string().trim().min(1, "code es requerido"),
+  instrument_type_code: z.string().trim().min(1, "instrument_type_code es requerido"),
+  name: z.string().trim().min(1, "name es requerido"),
+  external_symbol: z.string().trim().optional(),
+  description: z.string().trim().optional(),
+})
 
 // GET - Fetch all instruments
 export async function GET() {
@@ -28,11 +37,14 @@ export async function GET() {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
-    const { code, instrument_type_code, name, external_symbol, description } = body
-
-    if (!code || !instrument_type_code || !name) {
-      return NextResponse.json({ error: "code, instrument_type_code y name son requeridos" }, { status: 400 })
+    const validation = instrumentSchema.safeParse(body)
+    if (!validation.success) {
+      return NextResponse.json(
+        { error: validation.error.flatten().formErrors.join("; ") || "Datos inválidos" },
+        { status: 400 },
+      )
     }
+    const { code, instrument_type_code, name, external_symbol, description } = validation.data
 
     const result = await sql<Instrument[]>`
       INSERT INTO instruments (code, instrument_type_code, name, external_symbol, description)
@@ -56,11 +68,14 @@ export async function POST(request: NextRequest) {
 export async function PUT(request: NextRequest) {
   try {
     const body = await request.json()
-    const { code, instrument_type_code, name, external_symbol, description } = body
-
-    if (!code || !instrument_type_code || !name) {
-      return NextResponse.json({ error: "code, instrument_type_code y name son requeridos" }, { status: 400 })
+    const validation = instrumentSchema.safeParse(body)
+    if (!validation.success) {
+      return NextResponse.json(
+        { error: validation.error.flatten().formErrors.join("; ") || "Datos inválidos" },
+        { status: 400 },
+      )
     }
+    const { code, instrument_type_code, name, external_symbol, description } = validation.data
 
     const result = await sql<Instrument[]>`
       UPDATE instruments
@@ -88,11 +103,16 @@ export async function PUT(request: NextRequest) {
 export async function DELETE(request: NextRequest) {
   try {
     const body = await request.json()
-    const code = body?.code
-
-    if (!code) {
-      return NextResponse.json({ error: "code is required" }, { status: 400 })
+    const validation = z
+      .object({ code: z.string().trim().min(1, "code es requerido") })
+      .safeParse(body)
+    if (!validation.success) {
+      return NextResponse.json(
+        { error: validation.error.flatten().formErrors.join("; ") || "Datos inválidos" },
+        { status: 400 },
+      )
     }
+    const { code } = validation.data
 
     const result = await sql`
       DELETE FROM instruments WHERE code = ${code} RETURNING code
@@ -108,4 +128,3 @@ export async function DELETE(request: NextRequest) {
     return NextResponse.json({ error: "Failed to delete instrument" }, { status: 500 })
   }
 }
-

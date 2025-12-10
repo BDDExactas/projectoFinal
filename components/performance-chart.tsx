@@ -7,14 +7,17 @@ import { ChartContainer, ChartTooltip, ChartTooltipContent } from "@/components/
 import type { InstrumentPerformance } from "@/lib/db-types"
 import { useApiQuery } from "@/hooks/use-api"
 
-export function PerformanceChart() {
+export function PerformanceChart({ userEmail }: { userEmail?: string }) {
   const PERFORMANCE_POLL_MS = 120_000
   const selectPerformance = useCallback((json: any) => json.performance || [], [])
-  const { data: performance = [], loading } = useApiQuery<InstrumentPerformance[]>("/api/dashboard/performance", {
-    select: selectPerformance,
-    initialData: [],
-    pollIntervalMs: PERFORMANCE_POLL_MS,
-  })
+  const { data: performance = [], loading } = useApiQuery<InstrumentPerformance[]>(
+    `/api/dashboard/performance${userEmail ? `?userEmail=${encodeURIComponent(userEmail)}` : ""}`,
+    {
+      select: selectPerformance,
+      initialData: [],
+      pollIntervalMs: PERFORMANCE_POLL_MS,
+    },
+  )
 
   if (loading) {
     return (

@@ -86,7 +86,7 @@ export default function DashboardPage() {
             <PortfolioOverview userEmail={userEmail} />
 
             <div className="grid gap-6 lg:grid-cols-2">
-              <PerformanceChart />
+              <PerformanceChart userEmail={userEmail} />
               <TransactionsList userEmail={userEmail} />
             </div>
           </TabsContent>

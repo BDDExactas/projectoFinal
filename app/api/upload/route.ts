@@ -3,21 +3,30 @@ import { promises as fs } from "fs"
 import path from "path"
 import os from "os"
 import { type NextRequest, NextResponse } from "next/server"
+import { z } from "zod"
 import { sql } from "@/lib/db"
+
+const metaSchema = z.object({
+  userEmail: z.string().email("User email required"),
+})
 
 export async function POST(request: NextRequest) {
   try {
     const formData = await request.formData()
     const file = formData.get("file") as File
-    const userEmail = formData.get("userEmail") as string
+    const meta = metaSchema.safeParse({ userEmail: formData.get("userEmail") })
 
     if (!file) {
       return NextResponse.json({ error: "No file provided" }, { status: 400 })
     }
 
-    if (!userEmail) {
-      return NextResponse.json({ error: "User email required" }, { status: 400 })
+    if (!meta.success) {
+      return NextResponse.json(
+        { error: meta.error.flatten().formErrors.join("; ") || "User email required" },
+        { status: 400 },
+      )
     }
+    const { userEmail } = meta.data
 
     // Validate file type
     const validTypes = ["application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "application/vnd.ms-excel"]
