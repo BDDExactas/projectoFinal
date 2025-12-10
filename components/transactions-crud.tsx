@@ -75,7 +75,7 @@ export function TransactionsCrud({ userEmail }: { userEmail: string }) {
   const refreshTransactions = async () => {
     setLoading(true)
     try {
-      const res = await fetch(`/api/transactions?userEmail=${encodeURIComponent(userEmail)}&limit=50`)
+      const res = await fetch(`/api/transactions?userEmail=${encodeURIComponent(userEmail)}&limit=50&_t=${Date.now()}`)
       const data = await res.json()
       setTransactions(data.transactions || [])
     } catch (error) {

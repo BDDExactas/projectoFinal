@@ -169,17 +169,25 @@ export async function PUT(request: NextRequest) {
     const searchInstrumentCode = data.originalInstrumentCode || data.instrumentCode
     console.log('[DEBUG] Searching with:', { searchAccountName, searchInstrumentCode, createdAt: data.createdAt })
 
-    // Deterministic lookup: match the exact created_at value returned to the client
-    const existingTx = await sql`
+    // Query all matching transactions (PostgreSQL microseconds vs frontend milliseconds)
+    const allMatching = await sql`
       SELECT transaction_type, quantity, account_name, instrument_code, created_at
       FROM transactions
       WHERE user_email = ${data.userEmail}
         AND account_name = ${searchAccountName}
         AND instrument_code = ${searchInstrumentCode}
-        AND created_at = ${data.createdAt}
-      LIMIT 1
+      ORDER BY created_at DESC
+      LIMIT 10
     `
-    console.log('[DEBUG] Existing tx rows:', JSON.stringify(existingTx, null, 2))
+    console.log('[DEBUG] All matching results:', JSON.stringify(allMatching, null, 2))
+    
+    // Find exact match by comparing timestamps at millisecond precision
+    const targetTime = new Date(data.createdAt).getTime()
+    const existingTx = allMatching.filter(tx => {
+      const txTime = new Date(tx.created_at).getTime()
+      return txTime === targetTime
+    })
+    console.log('[DEBUG] Filtered to exact match:', existingTx.length, existingTx)
 
     if (existingTx.length === 0) {
       return NextResponse.json({ error: "Transaction not found" }, { status: 404 })
@@ -196,8 +204,54 @@ export async function PUT(request: NextRequest) {
 
     await ensureInstrumentPrice(data)
 
-    const rollbackChange = -computeQuantityChange(current.transaction_type, Number(current.quantity))
-    const newChange = computeQuantityChange(data.type, data.quantity)
+    // Check if account or instrument changed
+    const accountChanged = searchAccountName !== data.accountName
+    const instrumentChanged = searchInstrumentCode !== data.instrumentCode
+
+    // If account or instrument changed, we need to update two holdings
+    if (accountChanged || instrumentChanged) {
+      // Rollback old holding
+      const rollbackChange = -computeQuantityChange(current.transaction_type, Number(current.quantity))
+      await sql`
+        UPDATE account_instruments
+        SET quantity = quantity + ${rollbackChange},
+            updated_at = CURRENT_TIMESTAMP
+        WHERE user_email = ${data.userEmail} AND account_name = ${searchAccountName} AND instrument_code = ${searchInstrumentCode}
+      `
+
+      // Add to new holding
+      const newChange = computeQuantityChange(data.type, data.quantity)
+      const newHolding = await sql`
+        SELECT quantity FROM account_instruments
+        WHERE user_email = ${data.userEmail} AND account_name = ${data.accountName} AND instrument_code = ${data.instrumentCode}
+      `
+
+      if (newHolding.length === 0) {
+        await sql`
+          INSERT INTO account_instruments (user_email, account_name, instrument_code, quantity)
+          VALUES (${data.userEmail}, ${data.accountName}, ${data.instrumentCode}, ${newChange})
+        `
+      } else {
+        await sql`
+          UPDATE account_instruments
+          SET quantity = quantity + ${newChange},
+              updated_at = CURRENT_TIMESTAMP
+          WHERE user_email = ${data.userEmail} AND account_name = ${data.accountName} AND instrument_code = ${data.instrumentCode}
+        `
+      }
+    } else {
+      // Same holding - just replace the quantity
+      const rollbackChange = -computeQuantityChange(current.transaction_type, Number(current.quantity))
+      const newChange = computeQuantityChange(data.type, data.quantity)
+      const netChange = rollbackChange + newChange
+
+      await sql`
+        UPDATE account_instruments
+        SET quantity = quantity + ${netChange},
+            updated_at = CURRENT_TIMESTAMP
+        WHERE user_email = ${data.userEmail} AND account_name = ${data.accountName} AND instrument_code = ${data.instrumentCode}
+      `
+    }
 
     await sql`
       UPDATE transactions
@@ -215,25 +269,6 @@ export async function PUT(request: NextRequest) {
         AND instrument_code = ${searchInstrumentCode}
         AND created_at = ${current.created_at}
     `
-
-      const holding = await sql`
-        SELECT quantity FROM account_instruments
-      WHERE user_email = ${data.userEmail} AND account_name = ${data.accountName} AND instrument_code = ${data.instrumentCode}
-      `
-
-    if (holding.length === 0) {
-      await sql`
-        INSERT INTO account_instruments (user_email, account_name, instrument_code, quantity)
-        VALUES (${data.userEmail}, ${data.accountName}, ${data.instrumentCode}, ${newChange})
-      `
-    } else {
-      await sql`
-        UPDATE account_instruments
-        SET quantity = quantity + ${rollbackChange} + ${newChange},
-            updated_at = CURRENT_TIMESTAMP
-        WHERE user_email = ${data.userEmail} AND account_name = ${data.accountName} AND instrument_code = ${data.instrumentCode}
-      `
-    }
 
     return NextResponse.json({ success: true })
   } catch (error) {
@@ -255,27 +290,36 @@ export async function DELETE(request: NextRequest) {
 
     // If createdAt is provided, delete the specific transaction and rollback holding quantity
     if (createdAt) {
-      const txRes = await sql`
-        SELECT transaction_type, quantity FROM transactions
+      // Query all matching transactions (PostgreSQL microseconds vs frontend milliseconds)
+      const allMatching = await sql`
+        SELECT transaction_type, quantity, created_at FROM transactions
         WHERE user_email = ${userEmail}
           AND account_name = ${accountName}
           AND instrument_code = ${instrumentCode}
-          AND created_at = ${createdAt}
-        LIMIT 1
+        ORDER BY created_at DESC
+        LIMIT 10
       `
+
+      // Find exact match by comparing timestamps at millisecond precision
+      const targetTime = new Date(createdAt).getTime()
+      const txRes = allMatching.filter(tx => {
+        const txTime = new Date(tx.created_at).getTime()
+        return txTime === targetTime
+      })
 
       if (txRes.length === 0) {
         return NextResponse.json({ error: "Transaction not found" }, { status: 404 })
       }
 
-      const rollbackChange = -computeQuantityChange(txRes[0].transaction_type, Number(txRes[0].quantity))
+      const transaction = txRes[0]
+      const rollbackChange = -computeQuantityChange(transaction.transaction_type, Number(transaction.quantity))
 
       await sql`
         DELETE FROM transactions
         WHERE user_email = ${userEmail}
           AND account_name = ${accountName}
           AND instrument_code = ${instrumentCode}
-          AND created_at = ${createdAt}
+          AND created_at = ${transaction.created_at}
       `
 
       const holdingUpdate = await sql`
