@@ -200,20 +200,22 @@ export function TransactionsCrud({ userEmail }: { userEmail: string }) {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="space-y-2">
               <Label>Cuenta</Label>
-              <div className="space-y-1">
-                <Input
-                  list="account-options"
-                  value={form.accountName}
-                  onChange={(e) => setForm((prev) => ({ ...prev, accountName: e.target.value }))}
-                  disabled={!!editing}
-                  placeholder="Selecciona o escribe una cuenta"
-                />
-                <datalist id="account-options">
-                  {accountOptions.map((acc) => (
-                    <option key={acc} value={acc} />
+              <Select
+                value={form.accountName}
+                onValueChange={(val) => setForm((prev) => ({ ...prev, accountName: val }))}
+                disabled={!!editing}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Selecciona una cuenta" />
+                </SelectTrigger>
+                <SelectContent>
+                  {accounts.map((acc) => (
+                    <SelectItem key={acc.name} value={acc.name}>
+                      {acc.name}
+                    </SelectItem>
                   ))}
-                </datalist>
-              </div>
+                </SelectContent>
+              </Select>
             </div>
 
             <div className="space-y-2">
