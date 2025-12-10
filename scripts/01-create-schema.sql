@@ -5,7 +5,6 @@ DROP TABLE IF EXISTS instrument_prices CASCADE;
 DROP TABLE IF EXISTS accounts CASCADE;
 DROP TABLE IF EXISTS instruments CASCADE;
 DROP TABLE IF EXISTS instrument_types CASCADE;
-DROP TABLE IF EXISTS imported_files CASCADE;
 DROP TABLE IF EXISTS users CASCADE;
 
 -- 2. Users
@@ -68,29 +67,7 @@ CREATE TABLE IF NOT EXISTS accounts (
     ON UPDATE CASCADE ON DELETE SET NULL
 );
 
--- 6. Imported Files
--- Clave Natural Compuesta: Usuario + Nombre archivo + Fecha subida
--- Esto garantiza unicidad aunque se suba el mismo archivo dos veces
-CREATE TABLE IF NOT EXISTS imported_files (
-  user_email VARCHAR(255),
-  filename VARCHAR(255),
-  upload_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  
-  file_path VARCHAR(500),
-  status VARCHAR(50) DEFAULT 'pending',
-  rows_processed INTEGER DEFAULT 0,
-  errors_count INTEGER DEFAULT 0,
-  error_details TEXT,
-  
-  PRIMARY KEY (user_email, filename, upload_date),
-  
-  CONSTRAINT fk_files_user 
-    FOREIGN KEY (user_email) 
-    REFERENCES users(email) 
-    ON UPDATE CASCADE ON DELETE CASCADE
-);
-
--- 7. Account Instruments (Tabla Pivote)
+-- 6. Account Instruments (Tabla Pivote)
 -- Clave Natural: La combinación de la cuenta (Usuario+Nombre) y el Instrumento (Código)
 CREATE TABLE IF NOT EXISTS account_instruments (
   user_email VARCHAR(255),
@@ -113,7 +90,7 @@ CREATE TABLE IF NOT EXISTS account_instruments (
     ON UPDATE CASCADE ON DELETE CASCADE
 );
 
--- 8. Instrument Prices
+-- 7. Instrument Prices
 -- Clave Natural: Instrumento + Fecha
 CREATE TABLE IF NOT EXISTS instrument_prices (
   instrument_code VARCHAR(50),
@@ -132,7 +109,7 @@ CREATE TABLE IF NOT EXISTS instrument_prices (
     ON UPDATE CASCADE ON DELETE CASCADE
 );
 
--- 9. Transactions
+-- 8. Transactions
 -- Clave Natural: Aquí es complejo. Una transacción se define por Dónde, Qué y Cuándo.
 -- Usaremos Cuenta + Instrumento + Fecha + Created_At para unicidad.
 -- Nota cómo las FKs se vuelven grandes porque arrastran las claves compuestas de arriba.
@@ -143,12 +120,6 @@ CREATE TABLE IF NOT EXISTS transactions (
   
   -- Referencia a Instrument
   instrument_code VARCHAR(50),
-  
-  -- Referencia a Imported Files (Opcional)
-  file_filename VARCHAR(255),
-  file_upload_date TIMESTAMP,
-  -- Nota: file_user_email es redundante con user_email, pero necesario para la FK estricta
-  -- si quisiéramos integridad referencial pura, aunque asumimos que es el mismo usuario.
   
   transaction_date DATE NOT NULL,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -171,12 +142,7 @@ CREATE TABLE IF NOT EXISTS transactions (
   CONSTRAINT fk_trans_instrument 
     FOREIGN KEY (instrument_code) 
     REFERENCES instruments(code) 
-    ON UPDATE CASCADE,
-    
-  CONSTRAINT fk_trans_file 
-    FOREIGN KEY (user_email, file_filename, file_upload_date) 
-    REFERENCES imported_files(user_email, filename, upload_date) 
-    ON UPDATE CASCADE ON DELETE SET NULL
+    ON UPDATE CASCADE
 );
 
 -- Índices (Ajustados a las nuevas columnas de texto)

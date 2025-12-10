@@ -66,9 +66,6 @@ export interface Transaction {
   account_user_email: string
   account_name: string
   instrument_code: string
-  imported_file_user_email?: string | null
-  imported_file_filename?: string | null
-  imported_file_upload_date?: Date | null
   transaction_date: Date
   transaction_type: "buy" | "sell" | "deposit" | "withdrawal" | "dividend" | "interest"
   quantity: number

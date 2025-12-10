@@ -37,47 +37,11 @@ export async function POST(request: NextRequest) {
     const arrayBuffer = await file.arrayBuffer()
     const buffer = Buffer.from(arrayBuffer)
     const hash = crypto.createHash("sha256").update(buffer).digest("hex")
-    const extension = path.extname(file.name) || ".xlsx"
-    const savedFilename = `${hash}${extension}`
-    const absolutePath = path.join(uploadsDir, savedFilename)
-    // Store absolute path in DB so the processor can read it directly when available
-    const storedPath = absolutePath
-
-    // Idempotency: if same hash already uploaded by this user, reuse the record
-    const existing = await sql`
-      SELECT user_email, filename, upload_date, status, rows_processed, errors_count, error_details
-      FROM imported_files
-      WHERE user_email = ${userEmail} AND file_path = ${storedPath}
-      LIMIT 1
-    `
-
-    if (existing.length > 0) {
-      return NextResponse.json({
-        success: true,
-        duplicate: true,
-        file: existing[0],
-        filePath: storedPath,
-        buffer: buffer.toString("base64"),
-      })
-    }
-
-    // Persist the file server-side
-    await fs.writeFile(absolutePath, buffer)
-
-    // Create file record in database
-    const result = await sql`
-      INSERT INTO imported_files (user_email, filename, status, file_path)
-      VALUES (${userEmail}, ${file.name}, 'pending', ${storedPath})
-      RETURNING user_email, filename, upload_date, status, file_path
-    `
-
-    const fileRecord = result[0]
-
+    // Simply return the buffer for client-side processing
+    // No need to persist file or track in database
     return NextResponse.json({
       success: true,
-      file: fileRecord,
-      filePath: storedPath,
-      buffer: buffer.toString("base64"), // Send buffer for client-side processing
+      buffer: Buffer.from(arrayBuffer).toString("base64"),
     })
   } catch (error) {
     console.error("[v0] Upload error:", error)

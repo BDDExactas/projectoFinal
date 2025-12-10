@@ -96,15 +96,10 @@ SELECT
   t.price,
   t.total_amount,
   t.currency_code,
-  t.description,
-  if_table.filename AS source_file
+  t.description
 FROM transactions t
 JOIN users u ON t.user_email = u.email
 JOIN instruments i ON t.instrument_code = i.code
-LEFT JOIN imported_files if_table 
-  ON t.user_email = if_table.user_email 
- AND t.file_filename = if_table.filename 
- AND t.file_upload_date = if_table.upload_date
 ORDER BY t.transaction_date DESC;
 
 -- View: Instrument performance (price changes)
