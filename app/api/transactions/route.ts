@@ -153,30 +153,48 @@ export async function POST(request: NextRequest) {
 export async function PUT(request: NextRequest) {
   try {
     const body = await request.json()
+    console.log('[DEBUG] PUT body received:', JSON.stringify(body, null, 2))
+    
     const validation = transactionUpdateSchema.safeParse(body)
     if (!validation.success) {
+      console.log('[DEBUG] Validation failed:', validation.error)
       return NextResponse.json({ error: validation.error.flatten().formErrors.join("; ") }, { status: 400 })
     }
     const data = validation.data
+    console.log('[DEBUG] Validated data:', JSON.stringify(data, null, 2))
+    
+    // Use original values to find the transaction, fallback to new values if not provided
+    const searchAccountName = data.originalAccountName || data.accountName
+    const searchInstrumentCode = data.originalInstrumentCode || data.instrumentCode
+    console.log('[DEBUG] Searching with:', { searchAccountName, searchInstrumentCode, createdAt: data.createdAt })
 
-    const existingTx = await sql`
-      SELECT transaction_type, quantity, account_name, instrument_code
+    // Use date_trunc to compare timestamps at millisecond precision
+    console.log('[DEBUG] About to query with date_trunc')
+    const allMatching = await sql`
+      SELECT transaction_type, quantity, account_name, instrument_code, created_at
       FROM transactions
       WHERE user_email = ${data.userEmail}
-        AND account_name = ${data.accountName}
-        AND instrument_code = ${data.instrumentCode}
-        AND created_at = ${data.createdAt}
-      LIMIT 1
+        AND account_name = ${searchAccountName}
+        AND instrument_code = ${searchInstrumentCode}
+      ORDER BY created_at DESC
+      LIMIT 10
     `
+    console.log('[DEBUG] All matching results:', JSON.stringify(allMatching, null, 2))
+    
+    // Find the exact match by comparing ISO strings at millisecond precision
+    const targetTime = new Date(data.createdAt).getTime()
+    const existingTx = allMatching.filter(tx => {
+      const txTime = new Date(tx.created_at).getTime()
+      // Compare at millisecond level (ignore microseconds)
+      return Math.floor(txTime / 1) === Math.floor(targetTime / 1)
+    })
+    console.log('[DEBUG] Filtered to exact match:', existingTx.length, existingTx)
 
     if (existingTx.length === 0) {
       return NextResponse.json({ error: "Transaction not found" }, { status: 404 })
     }
 
     const current = existingTx[0]
-    if (current.account_name !== data.accountName || current.instrument_code !== data.instrumentCode) {
-      return NextResponse.json({ error: "No se puede cambiar la cuenta o el instrumento en una edición. Elimina y crea nuevamente." }, { status: 400 })
-    }
 
     await ensureAccount(data.userEmail, data.accountName)
 
@@ -198,11 +216,13 @@ export async function PUT(request: NextRequest) {
           total_amount = ${data.total ?? (data.price ? data.price * data.quantity : null)},
           currency_code = ${data.currency || "ARS"},
           description = ${data.description ?? null},
-          transaction_date = ${data.date}
+          transaction_date = ${data.date},
+          account_name = ${data.accountName},
+          instrument_code = ${data.instrumentCode}
       WHERE user_email = ${data.userEmail}
-        AND account_name = ${data.accountName}
-        AND instrument_code = ${data.instrumentCode}
-        AND created_at = ${data.createdAt}
+        AND account_name = ${searchAccountName}
+        AND instrument_code = ${searchInstrumentCode}
+        AND created_at = ${current.created_at}
     `
 
       const holding = await sql`
@@ -227,7 +247,8 @@ export async function PUT(request: NextRequest) {
     return NextResponse.json({ success: true })
   } catch (error) {
     console.error("[v0] Update transaction error:", error)
-    return NextResponse.json({ error: "Failed to update transaction" }, { status: 500 })
+    console.error("[v0] Error details:", error instanceof Error ? { message: error.message, stack: error.stack } : error)
+    return NextResponse.json({ error: error instanceof Error ? error.message : "Failed to update transaction" }, { status: 500 })
   }
 }
 

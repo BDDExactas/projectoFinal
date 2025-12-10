@@ -121,7 +121,12 @@ export function TransactionsCrud({ userEmail }: { userEmail: string }) {
       const res = await fetch("/api/transactions", {
         method: editing ? "PUT" : "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(editing ? { ...payload, createdAt: editing.created_at } : payload),
+        body: JSON.stringify(editing ? { 
+          ...payload, 
+          createdAt: editing.created_at,
+          originalAccountName: editing.account_name,
+          originalInstrumentCode: editing.instrument_code,
+        } : payload),
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || "Error")
@@ -198,6 +203,7 @@ export function TransactionsCrud({ userEmail }: { userEmail: string }) {
                   list="account-options"
                   value={form.accountName}
                   onChange={(e) => setForm((prev) => ({ ...prev, accountName: e.target.value }))}
+                  disabled={!!editing}
                   placeholder="Selecciona o escribe una cuenta"
                 />
                 <datalist id="account-options">
@@ -213,6 +219,7 @@ export function TransactionsCrud({ userEmail }: { userEmail: string }) {
               <Select
                 value={form.instrumentCode}
                 onValueChange={(val) => setForm((prev) => ({ ...prev, instrumentCode: val }))}
+                disabled={!!editing}
               >
                 <SelectTrigger>
                   <SelectValue placeholder="Selecciona un instrumento" />

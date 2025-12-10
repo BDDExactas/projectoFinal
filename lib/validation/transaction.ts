@@ -44,6 +44,8 @@ export const transactionInputSchema = z.object({
 
 export const transactionUpdateSchema = transactionInputSchema.extend({
   createdAt: z.string().min(1, "createdAt es requerido para editar"),
+  originalAccountName: z.string().optional(),
+  originalInstrumentCode: z.string().optional(),
 })
 
 export type TransactionInput = z.infer<typeof transactionInputSchema>
