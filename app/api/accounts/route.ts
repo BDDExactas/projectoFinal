@@ -1,96 +1,172 @@
-import { type NextRequest, NextResponse } from "next/server"
-import { sql } from "@/lib/db"
+import { NextRequest, NextResponse } from "next/server";
+import { z } from "zod";
+import { sql } from "@/lib/db";
+import { getUserFromRequest } from "@/lib/auth";
 
-export async function GET(request: NextRequest) {
+const accountInputSchema = z.object({
+  name: z.string().min(1, "El nombre es requerido").transform(s => s.trim()),
+  account_type: z.string().min(1, "El tipo de cuenta es requerido").transform(s => s.trim()),
+  bank_name: z.string().optional().transform(s => s && s.trim() ? s.trim() : undefined),
+  parent_account_name: z.string().optional().transform(s => s && s.trim() ? s.trim() : undefined),
+});
+
+const accountUpdateSchema = z.object({
+  name: z.string().min(1),
+  account_type: z.string().optional(),
+  bank_name: z.string().optional(),
+  parent_account_name: z.string().optional(),
+});
+
+export async function GET(req: NextRequest) {
   try {
-    const { searchParams } = new URL(request.url)
-    const userEmail = searchParams.get("userEmail")
-    if (!userEmail) return NextResponse.json({ error: "userEmail es requerido" }, { status: 400 })
+    const user = await getUserFromRequest(req);
+    if (!user) {
+      return NextResponse.json({ error: "No autorizado" }, { status: 401 });
+    }
 
-    const accounts = await sql`
-      SELECT user_email, name, account_type, bank_name, created_at, updated_at
+    console.log("GET /api/accounts - User email:", user.email);
+    const result = await sql`
+      SELECT 
+        user_email,
+        name,
+        account_type,
+        bank_name,
+        parent_account_name,
+        created_at,
+        updated_at
       FROM accounts
-      WHERE user_email = ${userEmail}
+      WHERE user_email = ${user.email}
       ORDER BY name ASC
-    `
-    return NextResponse.json({ accounts })
+    `;
+
+    console.log("GET /api/accounts - Cuentas encontradas:", result.length, result);
+    return NextResponse.json({ accounts: result });
   } catch (error) {
-    console.error("[v0] Fetch accounts error:", error)
-    return NextResponse.json({ error: "Failed to fetch accounts" }, { status: 500 })
+    console.error("Error fetching accounts:", error);
+    return NextResponse.json(
+      { error: "Error al obtener cuentas" },
+      { status: 500 }
+    );
   }
 }
 
-export async function POST(request: NextRequest) {
+export async function POST(req: NextRequest) {
   try {
-    const body = await request.json()
-    const { userEmail, name, accountType = "bank_account", bankName } = body
-    if (!userEmail || !name) {
-      return NextResponse.json({ error: "userEmail y name son requeridos" }, { status: 400 })
+    const user = await getUserFromRequest(req);
+    if (!user) {
+      return NextResponse.json({ error: "No autorizado" }, { status: 401 });
+    }
+
+    const body = await req.json();
+    console.log("POST /api/accounts - Body recibido:", body);
+    const validatedData = accountInputSchema.parse(body);
+    console.log("POST /api/accounts - Datos validados:", validatedData);
+    console.log("POST /api/accounts - User email:", user.email);
+
+    const result = await sql`
+      INSERT INTO accounts (user_email, name, account_type, bank_name, parent_account_name)
+      VALUES (
+        ${user.email},
+        ${validatedData.name},
+        ${validatedData.account_type},
+        ${validatedData.bank_name ?? null},
+        ${validatedData.parent_account_name ?? null}
+      )
+      ON CONFLICT (user_email, name) 
+      DO UPDATE SET
+        account_type = EXCLUDED.account_type,
+        bank_name = EXCLUDED.bank_name,
+        parent_account_name = EXCLUDED.parent_account_name,
+        updated_at = CURRENT_TIMESTAMP
+      RETURNING *
+    `;
+
+    console.log("POST /api/accounts - Resultado INSERT:", result);
+    return NextResponse.json({ success: true, account: result[0] });
+  } catch (error) {
+    console.error("Error creating/updating account:", error);
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : "Error al crear cuenta" },
+      { status: 500 }
+    );
+  }
+}
+
+export async function PUT(req: NextRequest) {
+  try {
+    const user = await getUserFromRequest(req);
+    if (!user) {
+      return NextResponse.json({ error: "No autorizado" }, { status: 401 });
+    }
+
+    const body = await req.json();
+    const validatedData = accountUpdateSchema.parse(body);
+
+    const updateFields: string[] = [];
+    const values: any[] = [];
+    
+    if (validatedData.account_type !== undefined) {
+      updateFields.push(`account_type = $${values.length + 1}`);
+      values.push(validatedData.account_type);
+    }
+    if (validatedData.bank_name !== undefined) {
+      updateFields.push(`bank_name = $${values.length + 1}`);
+      values.push(validatedData.bank_name || null);
+    }
+    if (validatedData.parent_account_name !== undefined) {
+      updateFields.push(`parent_account_name = $${values.length + 1}`);
+      values.push(validatedData.parent_account_name || null);
+    }
+
+    if (updateFields.length === 0) {
+      return NextResponse.json({ error: "No hay campos para actualizar" }, { status: 400 });
+    }
+
+    updateFields.push('updated_at = CURRENT_TIMESTAMP');
+    values.push(user.email, validatedData.name);
+
+    await sql.query(
+      `UPDATE accounts 
+       SET ${updateFields.join(', ')}
+       WHERE user_email = $${values.length - 1} AND name = $${values.length}`,
+      values
+    );
+
+    return NextResponse.json({ success: true });
+  } catch (error) {
+    console.error("Error updating account:", error);
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : "Error al actualizar cuenta" },
+      { status: 500 }
+    );
+  }
+}
+
+export async function DELETE(req: NextRequest) {
+  try {
+    const user = await getUserFromRequest(req);
+    if (!user) {
+      return NextResponse.json({ error: "No autorizado" }, { status: 401 });
+    }
+
+    const { searchParams } = new URL(req.url);
+    const name = searchParams.get("name");
+
+    if (!name) {
+      return NextResponse.json({ error: "Nombre de cuenta requerido" }, { status: 400 });
     }
 
     await sql`
-      INSERT INTO accounts (user_email, name, account_type, bank_name)
-      VALUES (${userEmail}, ${name}, ${accountType}, ${bankName ?? null})
-      ON CONFLICT (user_email, name) DO NOTHING
-    `
-
-    return NextResponse.json({ success: true })
-  } catch (error) {
-    console.error("[v0] Create account error:", error)
-    return NextResponse.json({ error: "Failed to create account" }, { status: 500 })
-  }
-}
-
-export async function PUT(request: NextRequest) {
-  try {
-    const body = await request.json()
-    const { userEmail, name, newName, accountType, bankName } = body
-    if (!userEmail || !name) {
-      return NextResponse.json({ error: "userEmail y name son requeridos" }, { status: 400 })
-    }
-
-    const result = await sql`
-      UPDATE accounts
-      SET name = COALESCE(${newName}, name),
-          account_type = COALESCE(${accountType}, account_type),
-          bank_name = COALESCE(${bankName}, bank_name),
-          updated_at = CURRENT_TIMESTAMP
-      WHERE user_email = ${userEmail} AND name = ${name}
-      RETURNING name
-    `
-
-    if (result.length === 0) {
-      return NextResponse.json({ error: "Account not found" }, { status: 404 })
-    }
-
-    return NextResponse.json({ success: true })
-  } catch (error) {
-    console.error("[v0] Update account error:", error)
-    return NextResponse.json({ error: "Failed to update account" }, { status: 500 })
-  }
-}
-
-export async function DELETE(request: NextRequest) {
-  try {
-    const body = await request.json()
-    const { userEmail, name } = body
-    if (!userEmail || !name) {
-      return NextResponse.json({ error: "userEmail y name son requeridos" }, { status: 400 })
-    }
-
-    const result = await sql`
       DELETE FROM accounts
-      WHERE user_email = ${userEmail} AND name = ${name}
-      RETURNING name
-    `
+      WHERE user_email = ${user.email} AND name = ${name}
+    `;
 
-    if (result.length === 0) {
-      return NextResponse.json({ error: "Account not found" }, { status: 404 })
-    }
-
-    return NextResponse.json({ success: true })
+    return NextResponse.json({ success: true });
   } catch (error) {
-    console.error("[v0] Delete account error:", error)
-    return NextResponse.json({ error: "Failed to delete account" }, { status: 500 })
+    console.error("Error deleting account:", error);
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : "Error al eliminar cuenta" },
+      { status: 500 }
+    );
   }
 }
