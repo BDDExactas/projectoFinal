@@ -76,7 +76,7 @@ export default function DashboardPage() {
             <TabsTrigger value="holdings">Tenencias</TabsTrigger>
             <TabsTrigger value="prices">Precios</TabsTrigger>
             <TabsTrigger value="instruments">Instrumentos</TabsTrigger>
-            <TabsTrigger value="instrument-types">Tipos</TabsTrigger>
+            <TabsTrigger value="instrument-types">Tipos de Instrumentos</TabsTrigger>
             <TabsTrigger value="transactions">Transacciones</TabsTrigger>
           </TabsList>
 
