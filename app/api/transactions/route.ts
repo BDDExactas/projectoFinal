@@ -169,27 +169,17 @@ export async function PUT(request: NextRequest) {
     const searchInstrumentCode = data.originalInstrumentCode || data.instrumentCode
     console.log('[DEBUG] Searching with:', { searchAccountName, searchInstrumentCode, createdAt: data.createdAt })
 
-    // Use date_trunc to compare timestamps at millisecond precision
-    console.log('[DEBUG] About to query with date_trunc')
-    const allMatching = await sql`
+    // Deterministic lookup: match the exact created_at value returned to the client
+    const existingTx = await sql`
       SELECT transaction_type, quantity, account_name, instrument_code, created_at
       FROM transactions
       WHERE user_email = ${data.userEmail}
         AND account_name = ${searchAccountName}
         AND instrument_code = ${searchInstrumentCode}
-      ORDER BY created_at DESC
-      LIMIT 10
+        AND created_at = ${data.createdAt}
+      LIMIT 1
     `
-    console.log('[DEBUG] All matching results:', JSON.stringify(allMatching, null, 2))
-    
-    // Find the exact match by comparing ISO strings at millisecond precision
-    const targetTime = new Date(data.createdAt).getTime()
-    const existingTx = allMatching.filter(tx => {
-      const txTime = new Date(tx.created_at).getTime()
-      // Compare at millisecond level (ignore microseconds)
-      return Math.floor(txTime / 1) === Math.floor(targetTime / 1)
-    })
-    console.log('[DEBUG] Filtered to exact match:', existingTx.length, existingTx)
+    console.log('[DEBUG] Existing tx rows:', JSON.stringify(existingTx, null, 2))
 
     if (existingTx.length === 0) {
       return NextResponse.json({ error: "Transaction not found" }, { status: 404 })
