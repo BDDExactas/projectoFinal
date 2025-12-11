@@ -163,6 +163,12 @@ export async function DELETE(req: NextRequest) {
     }
     const { name } = parsed.data;
 
+    // Borrado en cascada manual: primero cuentas hijas, luego la cuenta padre
+    await sql`
+      DELETE FROM accounts
+      WHERE user_email = ${user.email} AND parent_account_name = ${name}
+    `;
+
     await sql`
       DELETE FROM accounts
       WHERE user_email = ${user.email} AND name = ${name}
