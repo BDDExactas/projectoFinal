@@ -45,11 +45,12 @@ export function HoldingsTable({ userEmail }: { userEmail: string }) {
     initialData: [],
   })
 
-  const selectPortfolios = useCallback((json: any) => json.portfolios || [], [])
-  const { data: portfolios = [] } = useApiQuery<Array<{ account_name: string }>>(
-    `/api/dashboard/portfolio-totals?userEmail=${encodeURIComponent(userEmail)}`,
-    { select: selectPortfolios, initialData: [] },
-  )
+  const selectAccounts = useCallback((json: any) => json.accounts || [], [])
+  const { data: accounts = [] } = useApiQuery<Array<{ name: string }>>(`/api/accounts`, {
+    select: selectAccounts,
+    initialData: [],
+  })
+  const accountsForSelect = accounts.map((a) => a.name)
   const [addOpen, setAddOpen] = useState(false)
   const [selInstrument, setSelInstrument] = useState("")
   const [selAccount, setSelAccount] = useState<string>("")
@@ -65,10 +66,10 @@ export function HoldingsTable({ userEmail }: { userEmail: string }) {
   const [adjPrice, setAdjPrice] = useState<string>("")
 
   useEffect(() => {
-    if (!selAccount && portfolios.length) {
-      setSelAccount(String(portfolios[0].account_name))
+    if (!selAccount && accountsForSelect.length) {
+      setSelAccount(String(accountsForSelect[0]))
     }
-  }, [portfolios, selAccount])
+  }, [accountsForSelect, selAccount])
 
   useEffect(() => {
     if (holdingsError) {
@@ -177,14 +178,14 @@ export function HoldingsTable({ userEmail }: { userEmail: string }) {
                 <div className="space-y-3">
                   <div>
                     <Label htmlFor="account">Cuenta</Label>
-                    <Select id="account" value={selAccount} onValueChange={setSelAccount}>
-                      <SelectTrigger id="account">
+                    <Select value={selAccount} onValueChange={setSelAccount}>
+                      <SelectTrigger>
                         <SelectValue placeholder="Selecciona una cuenta" />
                       </SelectTrigger>
                       <SelectContent>
-                        {portfolios.map((p) => (
-                          <SelectItem key={p.account_name} value={String(p.account_name)}>
-                            {p.account_name}
+                        {accountsForSelect.map((name) => (
+                          <SelectItem key={name} value={String(name)}>
+                            {name}
                           </SelectItem>
                         ))}
                       </SelectContent>
@@ -193,8 +194,8 @@ export function HoldingsTable({ userEmail }: { userEmail: string }) {
 
                   <div>
                     <Label htmlFor="instrument">Instrumento</Label>
-                    <Select id="instrument" value={selInstrument} onValueChange={setSelInstrument}>
-                      <SelectTrigger id="instrument">
+                    <Select value={selInstrument} onValueChange={setSelInstrument}>
+                      <SelectTrigger>
                         <SelectValue placeholder="Selecciona un instrumento" />
                       </SelectTrigger>
                       <SelectContent>
