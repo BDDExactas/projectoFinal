@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useCallback, useEffect } from "react"
+import { useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -8,8 +8,18 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogTitle } from "@/components/ui/alert-dialog"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { useToast } from "@/hooks/use-toast"
 import { Plus, Trash2, Edit2, Loader2 } from "lucide-react"
+import { z } from "zod"
+import { useFetchData } from "@/hooks/use-fetch-data"
+import { apiDelete, ApiError } from "@/lib/api-client"
+import { useToast } from "@/hooks/use-toast"
+
+const accountSchema = z.object({
+  name: z.string().min(1, "El nombre es requerido").trim(),
+  account_type: z.string().min(1, "El tipo de cuenta es requerido").trim(),
+  bank_name: z.string().optional().transform(s => s && s.trim() ? s.trim() : undefined),
+  parent_account_name: z.string().optional().transform(s => s && s.trim() ? s.trim() : undefined),
+})
 
 interface Account {
   user_email: string
@@ -21,10 +31,23 @@ interface Account {
   updated_at: string
 }
 
+interface ApiResponse {
+  accounts: Account[]
+}
+
 export function AccountsCrud() {
   const { toast } = useToast()
-  const [accounts, setAccounts] = useState<Account[]>([])
-  const [loading, setLoading] = useState(false)
+  const { data, loading, refetch } = useFetchData<ApiResponse>(
+    "/api/accounts",
+    {
+      errorTitle: "Error",
+      errorDescription: "No se pudieron cargar las cuentas",
+    }
+  )
+
+  const accounts = data?.accounts || []
+
+  const [operationLoading, setOperationLoading] = useState(false)
   const [isDialogOpen, setIsDialogOpen] = useState(false)
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false)
   const [editingAccount, setEditingAccount] = useState<Account | null>(null)
@@ -37,29 +60,6 @@ export function AccountsCrud() {
     parent_account_name: "",
   })
 
-  const fetchAccounts = useCallback(async () => {
-    try {
-      setLoading(true)
-      const response = await fetch("/api/accounts")
-      if (!response.ok) throw new Error("Error al cargar cuentas")
-      const data = await response.json()
-      setAccounts(data.accounts || [])
-    } catch (error) {
-      console.error("Fetch error:", error)
-      toast({
-        title: "Error",
-        description: "No se pudieron cargar las cuentas",
-        variant: "destructive",
-      })
-    } finally {
-      setLoading(false)
-    }
-  }, [toast])
-
-  useEffect(() => {
-    fetchAccounts()
-  }, [fetchAccounts])
-
   const handleOpenDialog = (account?: Account) => {
     if (account) {
       setEditingAccount(account)
@@ -71,68 +71,53 @@ export function AccountsCrud() {
       })
     } else {
       setEditingAccount(null)
-      setFormData({
-        name: "",
-        account_type: "",
-        bank_name: "",
-        parent_account_name: "",
-      })
+      setFormData({ name: "", account_type: "", bank_name: "", parent_account_name: "" })
     }
     setIsDialogOpen(true)
   }
 
   const handleSave = async () => {
-    if (!formData.name || !formData.account_type) {
+    const result = accountSchema.safeParse(formData)
+    if (!result.success) {
+      const errors = result.error.flatten().fieldErrors
+      const firstError = Object.values(errors)[0]?.[0]
       toast({
         title: "Validación",
-        description: "Nombre y Tipo de cuenta son requeridos",
+        description: firstError || "Datos inválidos",
         variant: "destructive",
       })
       return
     }
 
     try {
-      setLoading(true)
-      
-      // Limpiar campos vacíos para evitar FK violations
-      const cleanedData = {
-        name: formData.name.trim(),
-        account_type: formData.account_type.trim(),
-        bank_name: formData.bank_name.trim() || undefined,
-        parent_account_name: formData.parent_account_name.trim() || undefined,
-      }
+      setOperationLoading(true)
+      const cleanedData = result.data
 
       // Si estamos editando y el nombre cambió, necesitamos DELETE + INSERT
       if (editingAccount && editingAccount.name !== cleanedData.name) {
-        // Primero eliminar la cuenta anterior
-        await fetch(`/api/accounts?name=${encodeURIComponent(editingAccount.name)}`, {
-          method: "DELETE",
-        })
-        
-        // Luego crear la nueva
-        const response = await fetch("/api/accounts", {
+        await apiDelete(`/api/accounts?name=${encodeURIComponent(editingAccount.name)}`)
+        await fetch("/api/accounts", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(cleanedData),
+        }).then(async (res) => {
+          if (!res.ok) {
+            const error = await res.json()
+            throw new ApiError(error.error || "Error al renombrar cuenta", res.status)
+          }
         })
-
-        if (!response.ok) {
-          const error = await response.json()
-          throw new Error(error.error || "Error al renombrar cuenta")
-        }
       } else {
-        // Crear nueva o actualizar existente
         const method = editingAccount ? "PUT" : "POST"
-        const response = await fetch("/api/accounts", {
+        await fetch("/api/accounts", {
           method,
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(cleanedData),
+        }).then(async (res) => {
+          if (!res.ok) {
+            const error = await res.json()
+            throw new ApiError(error.error || "Error al guardar", res.status)
+          }
         })
-
-        if (!response.ok) {
-          const error = await response.json()
-          throw new Error(error.error || "Error al guardar")
-        }
       }
 
       toast({
@@ -142,50 +127,44 @@ export function AccountsCrud() {
 
       setIsDialogOpen(false)
       setEditingAccount(null)
-      await fetchAccounts()
+      setFormData({ name: "", account_type: "", bank_name: "", parent_account_name: "" })
+      await refetch()
     } catch (error) {
-      console.error("Save error:", error)
+      const errorMsg = error instanceof ApiError ? error.message : "Error al guardar cuenta"
       toast({
         title: "Error",
-        description: error instanceof Error ? error.message : "Error al guardar cuenta",
+        description: errorMsg,
         variant: "destructive",
       })
     } finally {
-      setLoading(false)
+      setOperationLoading(false)
     }
   }
 
   const handleDelete = async (name: string) => {
     try {
-      setLoading(true)
-      const response = await fetch(`/api/accounts?name=${encodeURIComponent(name)}`, {
-        method: "DELETE",
-      })
-
-      if (!response.ok) {
-        const error = await response.json()
-        throw new Error(error.error || "Error al eliminar")
-      }
-
+      setOperationLoading(true)
+      await apiDelete(`/api/accounts?name=${encodeURIComponent(name)}`)
       toast({
         title: "Éxito",
         description: "Cuenta eliminada correctamente",
       })
-
       setIsDeleteDialogOpen(false)
       setDeleteTarget(null)
-      await fetchAccounts()
+      await refetch()
     } catch (error) {
-      console.error("Delete error:", error)
+      const errorMsg = error instanceof ApiError ? error.message : "Error al eliminar cuenta"
       toast({
         title: "Error",
-        description: error instanceof Error ? error.message : "Error al eliminar cuenta",
+        description: errorMsg,
         variant: "destructive",
       })
     } finally {
-      setLoading(false)
+      setOperationLoading(false)
     }
   }
+
+  const isLoading = loading || operationLoading
 
   return (
     <Card>
@@ -256,8 +235,8 @@ export function AccountsCrud() {
                   <Button variant="outline" onClick={() => setIsDialogOpen(false)}>
                     Cancelar
                   </Button>
-                  <Button onClick={handleSave} disabled={loading}>
-                    {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                  <Button onClick={handleSave} disabled={isLoading}>
+                    {operationLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
                     {editingAccount ? "Actualizar" : "Crear"}
                   </Button>
                 </div>
@@ -299,7 +278,7 @@ export function AccountsCrud() {
                           variant="ghost"
                           size="sm"
                           onClick={() => handleOpenDialog(account)}
-                          disabled={loading}
+                          disabled={isLoading}
                         >
                           <Edit2 className="h-4 w-4" />
                         </Button>
@@ -310,7 +289,7 @@ export function AccountsCrud() {
                             setDeleteTarget(account.name)
                             setIsDeleteDialogOpen(true)
                           }}
-                          disabled={loading}
+                          disabled={isLoading}
                         >
                           <Trash2 className="h-4 w-4 text-destructive" />
                         </Button>
@@ -334,10 +313,10 @@ export function AccountsCrud() {
             <AlertDialogCancel>Cancelar</AlertDialogCancel>
             <AlertDialogAction
               onClick={() => deleteTarget && handleDelete(deleteTarget)}
-              disabled={loading}
+              disabled={isLoading}
               className="bg-destructive hover:bg-destructive/90"
             >
-              {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+              {operationLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
               Eliminar
             </AlertDialogAction>
           </div>

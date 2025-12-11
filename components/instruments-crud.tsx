@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useCallback, useEffect } from "react"
+import { useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -9,8 +9,18 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogTitle } from "@/components/ui/alert-dialog"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { useToast } from "@/hooks/use-toast"
 import { Plus, Trash2, Edit2, Loader2 } from "lucide-react"
+import { z } from "zod"
+import { useFetchData } from "@/hooks/use-fetch-data"
+import { useCrudOperations } from "@/hooks/use-crud-operations"
+
+const instrumentSchema = z.object({
+  code: z.string().min(1, "El código es requerido").trim(),
+  instrument_type_code: z.string().min(1, "El tipo de instrumento es requerido").trim(),
+  name: z.string().min(1, "El nombre es requerido").trim(),
+  external_symbol: z.string().optional().transform(s => s && s.trim() ? s.trim() : undefined),
+  description: z.string().optional().transform(s => s && s.trim() ? s.trim() : undefined),
+})
 
 interface Instrument {
   code: string
@@ -26,11 +36,46 @@ interface InstrumentType {
   name: string
 }
 
+interface InstrumentsResponse {
+  instruments: Instrument[]
+}
+
+interface InstrumentTypesResponse {
+  types: InstrumentType[]
+}
+
 export function InstrumentsCrud() {
-  const { toast } = useToast()
-  const [instruments, setInstruments] = useState<Instrument[]>([])
-  const [instrumentTypes, setInstrumentTypes] = useState<InstrumentType[]>([])
-  const [loading, setLoading] = useState(false)
+  const { data: instrumentsData, loading: instrumentsLoading, refetch } = useFetchData<InstrumentsResponse>(
+    "/api/instruments",
+    {
+      errorTitle: "Error",
+      errorDescription: "No se pudieron cargar los instrumentos",
+    }
+  )
+
+  const { data: typesData } = useFetchData<InstrumentTypesResponse>(
+    "/api/instrument-types",
+    {
+      errorTitle: "Error",
+      errorDescription: "No se pudieron cargar los tipos de instrumento",
+    }
+  )
+
+  const instruments = instrumentsData?.instruments || []
+  const instrumentTypes = typesData?.types || []
+
+  const { create, update, remove, loading: crudLoading } = useCrudOperations({
+    entityName: "Instrumento",
+    apiEndpoint: "/api/instruments",
+    onSuccess: async () => {
+      await refetch()
+      setIsDialogOpen(false)
+      setEditingInstrument(null)
+      setFormData({ code: "", instrument_type_code: "", name: "", external_symbol: "", description: "" })
+    },
+    validateSchema: instrumentSchema,
+  })
+
   const [isDialogOpen, setIsDialogOpen] = useState(false)
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false)
   const [editingInstrument, setEditingInstrument] = useState<Instrument | null>(null)
@@ -43,42 +88,6 @@ export function InstrumentsCrud() {
     external_symbol: "",
     description: "",
   })
-
-  const fetchInstruments = useCallback(async () => {
-    try {
-      setLoading(true)
-      const response = await fetch("/api/instruments")
-      if (!response.ok) throw new Error("Error al cargar instrumentos")
-      const data = await response.json()
-      setInstruments(data.instruments || [])
-    } catch (error) {
-      console.error("Fetch error:", error)
-      toast({
-        title: "Error",
-        description: "No se pudieron cargar los instrumentos",
-        variant: "destructive",
-      })
-    } finally {
-      setLoading(false)
-    }
-  }, [toast])
-
-  const fetchInstrumentTypes = useCallback(async () => {
-    try {
-      const response = await fetch("/api/instrument-types")
-      if (response.ok) {
-        const data = await response.json()
-        setInstrumentTypes(data.types || [])
-      }
-    } catch (error) {
-      console.error("Fetch types error:", error)
-    }
-  }, [])
-
-  useEffect(() => {
-    fetchInstruments()
-    fetchInstrumentTypes()
-  }, [fetchInstruments, fetchInstrumentTypes])
 
   const handleOpenDialog = (instrument?: Instrument) => {
     if (instrument) {
@@ -104,82 +113,20 @@ export function InstrumentsCrud() {
   }
 
   const handleSave = async () => {
-    if (!formData.code || !formData.instrument_type_code || !formData.name) {
-      toast({
-        title: "Validación",
-        description: "Code, Tipo y Nombre son requeridos",
-        variant: "destructive",
-      })
-      return
-    }
-
-    try {
-      setLoading(true)
-      const method = editingInstrument ? "PUT" : "POST"
-      const response = await fetch("/api/instruments", {
-        method,
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(formData),
-      })
-
-      if (!response.ok) {
-        const error = await response.json()
-        throw new Error(error.error || "Error al guardar")
-      }
-
-      toast({
-        title: "Éxito",
-        description: `Instrumento ${editingInstrument ? "actualizado" : "creado"} correctamente`,
-      })
-
-      setIsDialogOpen(false)
-      setEditingInstrument(null)
-      await fetchInstruments()
-    } catch (error) {
-      console.error("Save error:", error)
-      toast({
-        title: "Error",
-        description: error instanceof Error ? error.message : "Error al guardar instrumento",
-        variant: "destructive",
-      })
-    } finally {
-      setLoading(false)
+    if (editingInstrument) {
+      await update(formData)
+    } else {
+      await create(formData)
     }
   }
 
   const handleDelete = async (code: string) => {
-    try {
-      setLoading(true)
-      const response = await fetch("/api/instruments", {
-        method: "DELETE",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ code }),
-      })
-
-      if (!response.ok) {
-        const error = await response.json()
-        throw new Error(error.error || "Error al eliminar")
-      }
-
-      toast({
-        title: "Éxito",
-        description: "Instrumento eliminado correctamente",
-      })
-
-      setIsDeleteDialogOpen(false)
-      setDeleteTarget(null)
-      await fetchInstruments()
-    } catch (error) {
-      console.error("Delete error:", error)
-      toast({
-        title: "Error",
-        description: error instanceof Error ? error.message : "Error al eliminar instrumento",
-        variant: "destructive",
-      })
-    } finally {
-      setLoading(false)
-    }
+    await remove({ code })
+    setIsDeleteDialogOpen(false)
+    setDeleteTarget(null)
   }
+
+  const isLoading = instrumentsLoading || crudLoading
 
   return (
     <Card>
@@ -262,8 +209,8 @@ export function InstrumentsCrud() {
                   <Button variant="outline" onClick={() => setIsDialogOpen(false)}>
                     Cancelar
                   </Button>
-                  <Button onClick={handleSave} disabled={loading}>
-                    {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                  <Button onClick={handleSave} disabled={isLoading}>
+                    {crudLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
                     {editingInstrument ? "Actualizar" : "Crear"}
                   </Button>
                 </div>
@@ -274,7 +221,7 @@ export function InstrumentsCrud() {
       </CardHeader>
 
       <CardContent>
-        {loading && instruments.length === 0 ? (
+        {instrumentsLoading && instruments.length === 0 ? (
           <div className="flex items-center justify-center py-8">
             <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
           </div>
@@ -307,7 +254,7 @@ export function InstrumentsCrud() {
                           variant="ghost"
                           size="sm"
                           onClick={() => handleOpenDialog(instrument)}
-                          disabled={loading}
+                          disabled={isLoading}
                         >
                           <Edit2 className="h-4 w-4" />
                         </Button>
@@ -318,7 +265,7 @@ export function InstrumentsCrud() {
                             setDeleteTarget(instrument.code)
                             setIsDeleteDialogOpen(true)
                           }}
-                          disabled={loading}
+                          disabled={isLoading}
                         >
                           <Trash2 className="h-4 w-4 text-destructive" />
                         </Button>
@@ -342,10 +289,10 @@ export function InstrumentsCrud() {
             <AlertDialogCancel>Cancelar</AlertDialogCancel>
             <AlertDialogAction
               onClick={() => deleteTarget && handleDelete(deleteTarget)}
-              disabled={loading}
+              disabled={isLoading}
               className="bg-destructive hover:bg-destructive/90"
             >
-              {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+              {crudLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
               Eliminar
             </AlertDialogAction>
           </div>
