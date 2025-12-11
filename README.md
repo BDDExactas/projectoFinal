@@ -6,7 +6,7 @@ Este proyecto es una plataforma web diseñada para simplificar la gestión de ca
 
 **Nota técnica:** La carga por Excel fue reemplazada por formularios CRUD en la pestaña "Transacciones" de la app para mayor flexibilidad.
 
----
+--- 
 
 ## LO ACORDADO vs LO HECHO
 
