@@ -1,4 +1,5 @@
 import { type NextRequest, NextResponse } from "next/server"
+import { z } from "zod"
 import { sql } from "@/lib/db"
 import { transactionInputSchema, transactionUpdateSchema, type TransactionInput } from "@/lib/validation/transaction"
 import { upsertInstrumentPrice } from "@/lib/price"
@@ -32,20 +33,38 @@ const ensureInstrumentPrice = async (input: TransactionInput) => {
   }
 }
 
+const transactionQuerySchema = z.object({
+  userEmail: z.string().email("userEmail es requerido"),
+  accountName: z.string().trim().optional(),
+  instrumentCode: z.string().trim().optional(),
+  startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "startDate inválido").optional(),
+  endDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "endDate inválido").optional(),
+  limit: z
+    .preprocess((v) => (v === null ? undefined : v), z.string().regex(/^\d+$/).transform((v) => Number(v)))
+    .optional(),
+})
+
+const transactionDeleteSchema = z.object({
+  userEmail: z.string().email("userEmail es requerido"),
+  accountName: z.string().trim().min(1, "accountName es requerido"),
+  instrumentCode: z.string().trim().min(1, "instrumentCode es requerido"),
+  createdAt: z.string().optional(),
+})
+
 export async function GET(request: NextRequest) {
   try {
-    const { searchParams } = new URL(request.url)
-    const userEmail = searchParams.get("userEmail")
-    if (!userEmail) {
-      return NextResponse.json({ error: "userEmail es requerido" }, { status: 400 })
+    const raw = Object.fromEntries(new URL(request.url).searchParams.entries())
+    const parsed = transactionQuerySchema.safeParse(raw)
+    if (!parsed.success) {
+      return NextResponse.json(
+        { error: parsed.error.flatten().formErrors.join("; ") || "Parámetros inválidos" },
+        { status: 400 },
+      )
     }
 
-    const accountName = searchParams.get("accountName")
-    const instrumentCode = searchParams.get("instrumentCode")
-    const startDate = searchParams.get("startDate")
-    const endDate = searchParams.get("endDate")
-    const limitRaw = Number(searchParams.get("limit") ?? "100")
-    const limit = Number.isFinite(limitRaw) && limitRaw > 0 ? Math.min(limitRaw, 500) : 100
+    const { userEmail, accountName, instrumentCode, startDate, endDate } = parsed.data
+    const limitValue =
+      parsed.data.limit && parsed.data.limit > 0 ? Math.min(parsed.data.limit, 500) : 100
 
     const transactions = await sql`
       SELECT 
@@ -67,7 +86,7 @@ export async function GET(request: NextRequest) {
         ${startDate ? sql`AND transaction_date >= ${startDate}` : sql``}
         ${endDate ? sql`AND transaction_date <= ${endDate}` : sql``}
       ORDER BY transaction_date DESC, created_at DESC
-      LIMIT ${limit}
+      LIMIT ${limitValue}
     `
 
     return NextResponse.json({ transactions })
@@ -292,11 +311,14 @@ export async function PUT(request: NextRequest) {
 export async function DELETE(request: NextRequest) {
   try {
     const body = await request.json()
-    const { userEmail, accountName, instrumentCode, createdAt } = body
-
-    if (!userEmail || !accountName || !instrumentCode) {
-      return NextResponse.json({ error: "Missing required parameters" }, { status: 400 })
+    const parsed = transactionDeleteSchema.safeParse(body)
+    if (!parsed.success) {
+      return NextResponse.json(
+        { error: parsed.error.flatten().formErrors.join("; ") || "Parámetros inválidos" },
+        { status: 400 },
+      )
     }
+    const { userEmail, accountName, instrumentCode, createdAt } = parsed.data
 
     // If createdAt is provided, delete the specific transaction and rollback holding quantity
     if (createdAt) {

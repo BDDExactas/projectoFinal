@@ -65,7 +65,7 @@ export function InstrumentsCrud() {
 
   const fetchInstrumentTypes = useCallback(async () => {
     try {
-      const response = await fetch("/api/instruments/types")
+      const response = await fetch("/api/instrument-types")
       if (response.ok) {
         const data = await response.json()
         setInstrumentTypes(data.types || [])

@@ -91,11 +91,12 @@ export async function PUT(request: NextRequest) {
 export async function DELETE(request: NextRequest) {
   try {
     const body = await request.json()
-    const code = body?.code
+    const parsed = instrumentTypeSchema.pick({ code: true }).safeParse(body)
 
-    if (!code) {
-      return NextResponse.json({ error: "code is required" }, { status: 400 })
+    if (!parsed.success) {
+      return NextResponse.json({ error: parsed.error.errors[0]?.message ?? "code is required" }, { status: 400 })
     }
+    const { code } = parsed.data
 
     const result = await sql`
       DELETE FROM instrument_types WHERE code = ${code} RETURNING code

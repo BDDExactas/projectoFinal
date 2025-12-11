@@ -17,6 +17,10 @@ const accountUpdateSchema = z.object({
   parent_account_name: z.string().optional(),
 });
 
+const accountDeleteSchema = z.object({
+  name: z.string().min(1, "Nombre de cuenta requerido"),
+});
+
 export async function GET(req: NextRequest) {
   try {
     const user = await getUserFromRequest(req);
@@ -150,11 +154,14 @@ export async function DELETE(req: NextRequest) {
     }
 
     const { searchParams } = new URL(req.url);
-    const name = searchParams.get("name");
-
-    if (!name) {
-      return NextResponse.json({ error: "Nombre de cuenta requerido" }, { status: 400 });
+    const parsed = accountDeleteSchema.safeParse({ name: searchParams.get("name") });
+    if (!parsed.success) {
+      return NextResponse.json(
+        { error: parsed.error.flatten().formErrors.join("; ") },
+        { status: 400 }
+      );
     }
+    const { name } = parsed.data;
 
     await sql`
       DELETE FROM accounts
