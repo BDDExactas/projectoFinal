@@ -7,12 +7,32 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogTitle } from "@/components/ui/alert-dialog"
 import { useToast } from "@/hooks/use-toast"
+import { useFetchData } from "@/hooks/use-fetch-data"
+import { apiDelete, ApiError } from "@/lib/api-client"
 import type { Instrument } from "@/lib/db-types"
 import { allowedTransactionTypes } from "@/lib/validation/transaction"
 import { todayIsoDate } from "@/lib/dates"
 import { format } from "date-fns"
 import { formatMoney, formatNumber } from "@/lib/format"
+import { z } from "zod"
+import { Loader2, Trash2 } from "lucide-react"
+
+const transactionSchema = z.object({
+  userEmail: z.string(),
+  accountName: z.string().min(1, "Selecciona una cuenta"),
+  instrumentCode: z.string().min(1, "Selecciona un instrumento"),
+  type: z.enum(["buy", "sell", "deposit", "withdrawal"], { errorMap: () => ({ message: "Tipo inválido" }) }),
+  quantity: z.number().positive("Cantidad debe ser positiva"),
+  price: z.number().optional(),
+  date: z.string(),
+  currency: z.string().min(1, "Selecciona moneda"),
+  description: z.string().optional(),
+  createdAt: z.string().optional(),
+  originalAccountName: z.string().optional(),
+  originalInstrumentCode: z.string().optional(),
+})
 
 type TransactionRow = {
   account_user_email: string
@@ -28,14 +48,44 @@ type TransactionRow = {
   created_at: string
 }
 
+interface AccountsResponse {
+  accounts: Array<{ name: string }>
+}
+
+interface InstrumentsResponse {
+  instruments: Instrument[]
+}
+
+interface TransactionsResponse {
+  transactions: TransactionRow[]
+}
+
 export function TransactionsCrud({ userEmail }: { userEmail: string }) {
-  const [accounts, setAccounts] = useState<Array<{ name: string }>>([])
-  const [instruments, setInstruments] = useState<Instrument[]>([])
-  const [transactions, setTransactions] = useState<TransactionRow[]>([])
-  const [loading, setLoading] = useState(false)
+  const { toast } = useToast()
+
+  const { data: accountsData, loading: accountsLoading } = useFetchData<AccountsResponse>(
+    `/api/accounts?userEmail=${encodeURIComponent(userEmail)}`,
+    { errorTitle: "Error", errorDescription: "No se pudieron cargar las cuentas" }
+  )
+
+  const { data: instrumentsData, loading: instrumentsLoading } = useFetchData<InstrumentsResponse>(
+    `/api/instruments`,
+    { errorTitle: "Error", errorDescription: "No se pudieron cargar los instrumentos" }
+  )
+
+  const { data: transactionsData, loading: transactionsLoading, refetch: refetchTransactions } = useFetchData<TransactionsResponse>(
+    `/api/transactions?userEmail=${encodeURIComponent(userEmail)}&limit=50&_t=${Date.now()}`,
+    { errorTitle: "Error", errorDescription: "No se pudieron cargar las transacciones" }
+  )
+
+  const accounts = accountsData?.accounts || []
+  const instruments = instrumentsData?.instruments || []
+  const transactions = transactionsData?.transactions || []
+
   const [saving, setSaving] = useState(false)
   const [editing, setEditing] = useState<TransactionRow | null>(null)
-  const { toast } = useToast()
+  const [deleteTarget, setDeleteTarget] = useState<TransactionRow | null>(null)
+  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false)
 
   const [form, setForm] = useState({
     accountName: "",
@@ -51,40 +101,16 @@ export function TransactionsCrud({ userEmail }: { userEmail: string }) {
   const accountOptions = useMemo(() => accounts.map((a) => a.name), [accounts])
 
   useEffect(() => {
-    async function fetchAux() {
-      try {
-        const [instRes, accRes] = await Promise.all([
-          fetch(`/api/instruments`),
-          fetch(`/api/accounts?userEmail=${encodeURIComponent(userEmail)}`),
-        ])
-        const instData = await instRes.json()
-        setInstruments(instData.instruments || [])
-        const accData = await accRes.json()
-        setAccounts(accData.accounts || [])
-        if (accData.accounts?.length) {
-          setForm((prev) => ({ ...prev, accountName: prev.accountName || accData.accounts[0].name }))
-        }
-      } catch (error) {
-        console.error("[v0] Failed to fetch aux data:", error)
-      }
+    if (accountOptions.length > 0 && !form.accountName) {
+      setForm((prev) => ({ ...prev, accountName: accountOptions[0] }))
     }
-    fetchAux()
-    refreshTransactions()
-  }, [userEmail])
+  }, [accountOptions, form.accountName])
 
-  const refreshTransactions = async () => {
-    setLoading(true)
-    try {
-      const res = await fetch(`/api/transactions?userEmail=${encodeURIComponent(userEmail)}&limit=50&_t=${Date.now()}`)
-      const data = await res.json()
-      setTransactions(data.transactions || [])
-    } catch (error) {
-      console.error("[v0] Fetch transactions error:", error)
-      toast({ title: "Error", description: "No se pudieron cargar las transacciones", variant: "destructive" })
-    } finally {
-      setLoading(false)
+  useEffect(() => {
+    if (instruments.length > 0 && !form.instrumentCode) {
+      setForm((prev) => ({ ...prev, instrumentCode: instruments[0].code }))
     }
-  }
+  }, [instruments, form.instrumentCode])
 
   const resetForm = () => {
     setEditing(null)
@@ -101,47 +127,46 @@ export function TransactionsCrud({ userEmail }: { userEmail: string }) {
   }
 
   const handleSubmit = async () => {
-    if (!form.accountName || !form.instrumentCode || !form.quantity) {
-      toast({ title: "Faltan datos", description: "Completa cuenta, instrumento y cantidad", variant: "destructive" })
-      return
-    }
-
-    setSaving(true)
-    const payload = {
+    const result = transactionSchema.safeParse({
       userEmail,
       accountName: form.accountName,
       instrumentCode: form.instrumentCode,
       type: form.type,
-      quantity: Number(form.quantity),
+      quantity: form.quantity ? Number(form.quantity) : undefined,
       price: form.price ? Number(form.price) : undefined,
       date: form.date,
-      currency: form.currency || "ARS",
-      description: form.description || undefined,
+      currency: form.currency,
+      description: form.description,
+      ...(editing && {
+        createdAt: editing.created_at,
+        originalAccountName: editing.account_name,
+        originalInstrumentCode: editing.instrument_code,
+      }),
+    })
+
+    if (!result.success) {
+      const errors = result.error.flatten().fieldErrors
+      const firstError = Object.values(errors)[0]?.[0]
+      toast({ title: "Validación", description: firstError || "Datos inválidos", variant: "destructive" })
+      return
     }
 
     try {
+      setSaving(true)
       const res = await fetch("/api/transactions", {
         method: editing ? "PUT" : "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(editing ? { 
-          ...payload, 
-          createdAt: editing.created_at,
-          originalAccountName: editing.account_name,
-          originalInstrumentCode: editing.instrument_code,
-        } : payload),
+        body: JSON.stringify(result.data),
       })
       const data = await res.json()
-      if (!res.ok) throw new Error(data.error || "Error")
+      if (!res.ok) throw new ApiError(data.error || "Error", res.status)
+      
       toast({ title: editing ? "Transacción actualizada" : "Transacción creada" })
-      await refreshTransactions()
+      await refetchTransactions()
       resetForm()
     } catch (error) {
-      console.error("[v0] Save transaction error:", error)
-      toast({
-        title: "Error",
-        description: error instanceof Error ? error.message : "No se pudo guardar la transacción",
-        variant: "destructive",
-      })
+      const errorMsg = error instanceof ApiError ? error.message : "No se pudo guardar la transacción"
+      toast({ title: "Error", description: errorMsg, variant: "destructive" })
     } finally {
       setSaving(false)
     }
@@ -161,33 +186,31 @@ export function TransactionsCrud({ userEmail }: { userEmail: string }) {
     })
   }
 
-  const handleDelete = async (tx: TransactionRow) => {
-    if (!confirm("¿Eliminar esta transacción?")) return
+  const handleDelete = async () => {
+    if (!deleteTarget) return
     try {
-      const res = await fetch("/api/transactions", {
-        method: "DELETE",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          userEmail,
-          accountName: tx.account_name,
-          instrumentCode: tx.instrument_code,
-          createdAt: tx.created_at,
-        }),
+      setSaving(true)
+      await apiDelete("/api/transactions", {
+        userEmail,
+        accountName: deleteTarget.account_name,
+        instrumentCode: deleteTarget.instrument_code,
+        createdAt: deleteTarget.created_at,
       })
-      const data = await res.json()
-      if (!res.ok) throw new Error(data.error || "Error")
+      
       toast({ title: "Transacción eliminada" })
-      if (editing?.created_at === tx.created_at) resetForm()
-      await refreshTransactions()
+      if (editing?.created_at === deleteTarget.created_at) resetForm()
+      await refetchTransactions()
+      setIsDeleteDialogOpen(false)
+      setDeleteTarget(null)
     } catch (error) {
-      console.error("[v0] Delete transaction error:", error)
-      toast({
-        title: "Error",
-        description: error instanceof Error ? error.message : "No se pudo eliminar la transacción",
-        variant: "destructive",
-      })
+      const errorMsg = error instanceof ApiError ? error.message : "No se pudo eliminar la transacción"
+      toast({ title: "Error", description: errorMsg, variant: "destructive" })
+    } finally {
+      setSaving(false)
     }
   }
+
+  const isLoading = accountsLoading || instrumentsLoading || transactionsLoading
 
   return (
     <div className="space-y-6">
@@ -302,12 +325,21 @@ export function TransactionsCrud({ userEmail }: { userEmail: string }) {
 
           <div className="flex gap-2 justify-end">
             {editing && (
-              <Button variant="outline" onClick={resetForm} disabled={saving}>
+              <Button variant="outline" onClick={resetForm} disabled={saving || isLoading}>
                 Cancelar edición
               </Button>
             )}
-            <Button onClick={handleSubmit} disabled={saving}>
-              {saving ? "Guardando..." : editing ? "Guardar cambios" : "Agregar transacción"}
+            <Button onClick={handleSubmit} disabled={saving || isLoading}>
+              {saving ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Guardando...
+                </>
+              ) : editing ? (
+                "Guardar cambios"
+              ) : (
+                "Agregar transacción"
+              )}
             </Button>
           </div>
         </CardContent>
@@ -319,7 +351,7 @@ export function TransactionsCrud({ userEmail }: { userEmail: string }) {
           <CardDescription>Filtradas por usuario, ordenadas por fecha.</CardDescription>
         </CardHeader>
         <CardContent className="overflow-x-auto">
-          {loading ? (
+          {isLoading ? (
             <div className="h-32 animate-pulse bg-muted/30 rounded" />
           ) : transactions.length === 0 ? (
             <p className="text-sm text-muted-foreground">No hay transacciones registradas.</p>
@@ -352,11 +384,19 @@ export function TransactionsCrud({ userEmail }: { userEmail: string }) {
                       {tx.total_amount ? formatMoney(tx.total_amount, tx.currency_code) : "-"}
                     </TableCell>
                     <TableCell className="space-x-2">
-                      <Button variant="ghost" size="sm" onClick={() => handleEdit(tx)}>
+                      <Button variant="ghost" size="sm" onClick={() => handleEdit(tx)} disabled={saving}>
                         Editar
                       </Button>
-                      <Button variant="ghost" size="sm" onClick={() => handleDelete(tx)}>
-                        Eliminar
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => {
+                          setDeleteTarget(tx)
+                          setIsDeleteDialogOpen(true)
+                        }}
+                        disabled={saving}
+                      >
+                        <Trash2 className="h-4 w-4 text-destructive" />
                       </Button>
                     </TableCell>
                   </TableRow>
@@ -366,6 +406,26 @@ export function TransactionsCrud({ userEmail }: { userEmail: string }) {
           )}
         </CardContent>
       </Card>
+
+      <AlertDialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogTitle>¿Eliminar transacción?</AlertDialogTitle>
+          <AlertDialogDescription>
+            Esta acción no se puede deshacer.
+          </AlertDialogDescription>
+          <div className="flex justify-end gap-2 pt-4">
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleDelete}
+              disabled={saving}
+              className="bg-destructive hover:bg-destructive/90"
+            >
+              {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+              Eliminar
+            </AlertDialogAction>
+          </div>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }
