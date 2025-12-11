@@ -74,18 +74,13 @@ export function TransactionsCrud({ userEmail }: { userEmail: string }) {
   )
 
   const { data: transactionsData, loading: transactionsLoading, refetch: refetchTransactions } = useFetchData<TransactionsResponse>(
-    `/api/transactions?userEmail=${encodeURIComponent(userEmail)}&limit=50&_t=${Date.now()}`,
+    `/api/transactions?userEmail=${encodeURIComponent(userEmail)}&limit=50`,
     { errorTitle: "Error", errorDescription: "No se pudieron cargar las transacciones" }
   )
 
   const accounts = accountsData?.accounts || []
   const instruments = instrumentsData?.instruments || []
   const transactions = transactionsData?.transactions || []
-
-  const [saving, setSaving] = useState(false)
-  const [editing, setEditing] = useState<TransactionRow | null>(null)
-  const [deleteTarget, setDeleteTarget] = useState<TransactionRow | null>(null)
-  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false)
 
   const [form, setForm] = useState({
     accountName: "",
@@ -97,6 +92,15 @@ export function TransactionsCrud({ userEmail }: { userEmail: string }) {
     currency: "ARS",
     description: "",
   })
+
+  const [saving, setSaving] = useState(false)
+  const [editing, setEditing] = useState<TransactionRow | null>(null)
+  const [deleteTarget, setDeleteTarget] = useState<TransactionRow | null>(null)
+  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false)
+
+  // Datos se están cargando SOLO al inicio, NO continuamente
+  const isInitialLoading = accountsLoading || instrumentsLoading || transactionsLoading
+  const isLoading = isInitialLoading || saving
 
   const accountOptions = useMemo(() => accounts.map((a) => a.name), [accounts])
 
@@ -127,12 +131,18 @@ export function TransactionsCrud({ userEmail }: { userEmail: string }) {
   }
 
   const handleSubmit = async () => {
+    // Validación básica de cantidad
+    if (!form.accountName || !form.instrumentCode || !form.quantity) {
+      toast({ title: "Validación", description: "Completa todos los campos requeridos", variant: "destructive" })
+      return
+    }
+
     const result = transactionSchema.safeParse({
       userEmail,
       accountName: form.accountName,
       instrumentCode: form.instrumentCode,
       type: form.type,
-      quantity: form.quantity ? Number(form.quantity) : undefined,
+      quantity: Number(form.quantity),
       price: form.price ? Number(form.price) : undefined,
       date: form.date,
       currency: form.currency,
@@ -209,8 +219,6 @@ export function TransactionsCrud({ userEmail }: { userEmail: string }) {
       setSaving(false)
     }
   }
-
-  const isLoading = accountsLoading || instrumentsLoading || transactionsLoading
 
   return (
     <div className="space-y-6">
