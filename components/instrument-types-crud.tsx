@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useCallback, useEffect } from "react"
+import { useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -8,18 +8,43 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogTitle } from "@/components/ui/alert-dialog"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { useToast } from "@/hooks/use-toast"
 import { Plus, Trash2, Edit2, Loader2 } from "lucide-react"
+import { z } from "zod"
+import { useFetchData } from "@/hooks/use-fetch-data"
+import { useCrudOperations } from "@/hooks/use-crud-operations"
+
+const instrumentTypeSchema = z.object({
+  code: z.string().min(1, "El código es requerido").transform(s => s.toLowerCase().trim()),
+  name: z.string().min(1, "El nombre es requerido").trim(),
+})
 
 interface InstrumentType {
   code: string
   name: string
 }
 
+interface ApiResponse {
+  types: InstrumentType[]
+}
+
 export function InstrumentTypesCrud() {
-  const { toast } = useToast()
-  const [types, setTypes] = useState<InstrumentType[]>([])
-  const [loading, setLoading] = useState(false)
+  const { data, loading, refetch } = useFetchData<ApiResponse>(
+    "/api/instrument-types",
+    {
+      errorTitle: "Error",
+      errorDescription: "No se pudieron cargar los tipos de instrumento",
+    }
+  )
+
+  const types = data?.types || []
+
+  const { create, update, remove, loading: operationLoading } = useCrudOperations<z.infer<typeof instrumentTypeSchema>>({
+    entityName: "Tipo de instrumento",
+    apiEndpoint: "/api/instrument-types",
+    onSuccess: async () => { await refetch() },
+    validateSchema: instrumentTypeSchema,
+  })
+
   const [isDialogOpen, setIsDialogOpen] = useState(false)
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false)
   const [editingType, setEditingType] = useState<InstrumentType | null>(null)
@@ -29,29 +54,6 @@ export function InstrumentTypesCrud() {
     code: "",
     name: "",
   })
-
-  const fetchTypes = useCallback(async () => {
-    try {
-      setLoading(true)
-      const response = await fetch("/api/instrument-types")
-      if (!response.ok) throw new Error("Error al cargar tipos")
-      const data = await response.json()
-      setTypes(data.types || [])
-    } catch (error) {
-      console.error("Fetch error:", error)
-      toast({
-        title: "Error",
-        description: "No se pudieron cargar los tipos de instrumento",
-        variant: "destructive",
-      })
-    } finally {
-      setLoading(false)
-    }
-  }, [toast])
-
-  useEffect(() => {
-    fetchTypes()
-  }, [fetchTypes])
 
   const handleOpenDialog = (type?: InstrumentType) => {
     if (type) {
@@ -71,82 +73,26 @@ export function InstrumentTypesCrud() {
   }
 
   const handleSave = async () => {
-    if (!formData.code || !formData.name) {
-      toast({
-        title: "Validación",
-        description: "Code y Nombre son requeridos",
-        variant: "destructive",
-      })
-      return
-    }
+    const result = editingType 
+      ? await update(formData)
+      : await create(formData)
 
-    try {
-      setLoading(true)
-      const method = editingType ? "PUT" : "POST"
-      const response = await fetch("/api/instrument-types", {
-        method,
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(formData),
-      })
-
-      if (!response.ok) {
-        const error = await response.json()
-        throw new Error(error.error || "Error al guardar")
-      }
-
-      toast({
-        title: "Éxito",
-        description: `Tipo ${editingType ? "actualizado" : "creado"} correctamente`,
-      })
-
+    if (result) {
       setIsDialogOpen(false)
       setEditingType(null)
-      await fetchTypes()
-    } catch (error) {
-      console.error("Save error:", error)
-      toast({
-        title: "Error",
-        description: error instanceof Error ? error.message : "Error al guardar tipo",
-        variant: "destructive",
-      })
-    } finally {
-      setLoading(false)
+      setFormData({ code: "", name: "" })
     }
   }
 
   const handleDelete = async (code: string) => {
-    try {
-      setLoading(true)
-      const response = await fetch("/api/instrument-types", {
-        method: "DELETE",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ code }),
-      })
-
-      if (!response.ok) {
-        const error = await response.json()
-        throw new Error(error.error || "Error al eliminar")
-      }
-
-      toast({
-        title: "Éxito",
-        description: "Tipo de instrumento eliminado correctamente",
-      })
-
+    const result = await remove({ code })
+    if (result) {
       setIsDeleteDialogOpen(false)
       setDeleteTarget(null)
-      await fetchTypes()
-    } catch (error) {
-      console.error("Delete error:", error)
-      toast({
-        title: "Error",
-        description: error instanceof Error ? error.message : "Error al eliminar tipo",
-        variant: "destructive",
-      })
-    } finally {
-      setLoading(false)
     }
   }
+
+  const isLoading = loading || operationLoading
 
   return (
     <Card>
@@ -193,8 +139,8 @@ export function InstrumentTypesCrud() {
                   <Button variant="outline" onClick={() => setIsDialogOpen(false)}>
                     Cancelar
                   </Button>
-                  <Button onClick={handleSave} disabled={loading}>
-                    {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                  <Button onClick={handleSave} disabled={isLoading}>
+                    {isLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
                     {editingType ? "Actualizar" : "Crear"}
                   </Button>
                 </div>
@@ -205,7 +151,7 @@ export function InstrumentTypesCrud() {
       </CardHeader>
 
       <CardContent>
-        {loading && types.length === 0 ? (
+        {isLoading && types.length === 0 ? (
           <div className="flex items-center justify-center py-8">
             <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
           </div>
@@ -232,7 +178,7 @@ export function InstrumentTypesCrud() {
                           variant="ghost"
                           size="sm"
                           onClick={() => handleOpenDialog(type)}
-                          disabled={loading}
+                          disabled={isLoading}
                         >
                           <Edit2 className="h-4 w-4" />
                         </Button>
@@ -243,7 +189,7 @@ export function InstrumentTypesCrud() {
                             setDeleteTarget(type.code)
                             setIsDeleteDialogOpen(true)
                           }}
-                          disabled={loading}
+                          disabled={isLoading}
                         >
                           <Trash2 className="h-4 w-4 text-destructive" />
                         </Button>
@@ -267,10 +213,10 @@ export function InstrumentTypesCrud() {
             <AlertDialogCancel>Cancelar</AlertDialogCancel>
             <AlertDialogAction
               onClick={() => deleteTarget && handleDelete(deleteTarget)}
-              disabled={loading}
+              disabled={isLoading}
               className="bg-destructive hover:bg-destructive/90"
             >
-              {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+              {isLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
               Eliminar
             </AlertDialogAction>
           </div>
