@@ -114,6 +114,11 @@ export async function DELETE(request: NextRequest) {
     }
     const { code } = validation.data
 
+    // Borrado en cascada manual: transacciones -> precios -> tenencias -> instrumento
+    await sql`DELETE FROM transactions WHERE instrument_code = ${code}`
+    await sql`DELETE FROM instrument_prices WHERE instrument_code = ${code}`
+    await sql`DELETE FROM account_instruments WHERE instrument_code = ${code}`
+
     const result = await sql`
       DELETE FROM instruments WHERE code = ${code} RETURNING code
     `
@@ -125,6 +130,17 @@ export async function DELETE(request: NextRequest) {
     return NextResponse.json({ success: true, message: "Instrument deleted" })
   } catch (error) {
     console.error("[v0] Error deleting instrument:", error)
+    const err: any = error
+    if (err?.code === "23503") {
+      // Foreign key constraint (hay transacciones/precios/tenencias asociadas)
+      return NextResponse.json(
+        {
+          error:
+            "No se puede eliminar el instrumento porque tiene transacciones, precios o tenencias asociadas",
+        },
+        { status: 400 },
+      )
+    }
     return NextResponse.json({ error: "Failed to delete instrument" }, { status: 500 })
   }
 }
