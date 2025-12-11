@@ -51,7 +51,10 @@ export function PortfolioOverview({ userEmail }: { userEmail: string }) {
 
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
         {portfolios.map((portfolio) => (
-          <Card key={`${portfolio.account_user_email}:${portfolio.account_name}`} className="hover:border-primary/50 transition-colors">
+          <Card
+            key={`${portfolio.account_user_email}:${portfolio.account_name}:${portfolio.currency_code}`}
+            className="hover:border-primary/50 transition-colors"
+          >
             <CardHeader className="pb-3">
               <CardTitle className="text-base font-medium">{portfolio.account_name}</CardTitle>
             </CardHeader>
